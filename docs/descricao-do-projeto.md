@@ -54,20 +54,41 @@ de verdade para o layout musical.
   simples destaque de cor. Também fica em aberto tornar o estilo de destaque
   totalmente configurável.
 
+## Estrutura do repositório
+
+O repositório `verovio_lottie` não é apenas o fork do Verovio — ele também
+abriga as ferramentas e a documentação criadas especificamente para este
+projeto. Por isso a raiz do repositório é dividida assim:
+
+- **`verovio/`** — o fork do Verovio propriamente dito: todo o código-fonte
+  vendorizado (C++, bindings, fontes, dados) mais o novo exportador
+  dotLottie que será desenvolvido dentro dele. É o único diretório que
+  espelha a estrutura do projeto Verovio original.
+- **`docs/`** — documentação do processo e das decisões deste projeto
+  (este documento, decisões de arquitetura, notas de progresso).
+- Diretórios a criar conforme o projeto avança, na raiz (fora de
+  `verovio/`): ferramentas de comparação visual SVG vs. dotLottie
+  (renderização para PNG, diffing de imagens) e qualquer outro utilitário
+  de suporte ao desenvolvimento que não faça parte do Verovio em si.
+
+Essa separação existe para deixar claro o que é código vendorizado/fork
+(dentro de `verovio/`, sujeito às convenções do próprio Verovio) e o que é
+tooling e documentação próprios deste projeto (na raiz).
+
 ## Base técnica
 
 - Ponto de partida: código-fonte oficial do Verovio, última versão da série
-  **6.3.x**, baixado diretamente (sem manter vínculo de submodule/subtree com
-  o upstream).
-- O `verovio_lottie` será um **repositório git completamente independente**
-  do repositório oficial do Verovio — um fork "solto", não uma cópia
-  rastreada via submódulo. Isso significa que atualizações futuras do
-  Verovio upstream precisarão ser incorporadas manualmente, se necessário.
+  **6.3.x** (tag `version-6.3.0`), baixado diretamente (sem manter vínculo de
+  submodule/subtree com o upstream) e vendorizado em `verovio/`.
+- O `verovio_lottie` é um **repositório git completamente independente** do
+  repositório oficial do Verovio — um fork "solto", não uma cópia rastreada
+  via submódulo. Isso significa que atualizações futuras do Verovio upstream
+  precisarão ser incorporadas manualmente, se necessário.
 - A exportação para dotLottie será implementada como um **exportador nativo
-  em C++ dentro do próprio Verovio**, seguindo o mesmo padrão arquitetural
-  dos exportadores já existentes (como o exportador SVG). Não haverá uma
-  camada externa/pós-processamento em outra linguagem convertendo SVG em
-  Lottie.
+  em C++ dentro do código do Verovio** (ou seja, dentro de `verovio/src` e
+  `verovio/include`), seguindo o mesmo padrão arquitetural dos exportadores
+  já existentes (como o exportador SVG). Não haverá uma camada externa/
+  pós-processamento em outra linguagem convertendo SVG em Lottie.
 - Espera-se expor essa exportação pela mesma interface de linha de comando
   já usada pelos outros formatos do Verovio (ex.: um novo valor de formato
   de saída, análogo a `--to svg`), mas o nome exato da flag e a estrutura de
@@ -167,8 +188,8 @@ do projeto e devem ser resolvidos/pesquisados durante o desenvolvimento:
 
 ## Roadmap sugerido (fases)
 
-1. Baixar/vendorizar o código-fonte do Verovio 6.3.x e inicializar o
-   repositório git independente do `verovio_lottie`.
+1. ✅ Baixar/vendorizar o código-fonte do Verovio 6.3.0 em `verovio/` e
+   inicializar o repositório git independente do `verovio_lottie`.
 2. Implementar um exportador dotLottie mínimo, capaz de reproduzir
    visualmente uma pauta simples e monofônica, validado por comparação
    PNG contra o SVG equivalente.

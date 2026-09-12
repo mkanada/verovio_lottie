@@ -18,13 +18,21 @@ Verovio possa ser vista em um visualizador de Lottie com:
 É a base de um projeto maior de e-learning musical, o **zywny**, que vai
 consumir esses `.lottie` junto com o `timemap` do Verovio.
 
-## Estado atual do repositório
+## Estrutura do repositório
 
-Este repositório está em fase de definição — ainda **não contém** o
-código-fonte do Verovio nem histórico git. Antes de qualquer implementação,
-o código-fonte oficial do Verovio (série **6.3.x**) precisa ser baixado e
-vendorizado aqui, com um histórico git **próprio e independente** do
-upstream (não submodule/subtree).
+- **`verovio/`** — o fork do Verovio vendorizado (tag `version-6.3.0`),
+  com sua própria estrutura interna (`src/`, `include/`, `bindings/`,
+  `fonts/`, `tools/`, etc., e seu próprio `.gitignore`). É onde o novo
+  exportador dotLottie será implementado, seguindo as convenções do
+  Verovio.
+- **Raiz do repositório** — tudo que é deste projeto e não do Verovio em
+  si: `docs/` (documentação do processo), e, conforme o projeto avançar,
+  as ferramentas de comparação visual (renderização/diff de PNG entre SVG
+  e dotLottie) e outros utilitários de suporte. Não misture esse tooling
+  dentro de `verovio/`.
+- Histórico git **próprio e independente** do upstream do Verovio (sem
+  submodule/subtree) — atualizações do Verovio original precisam ser
+  incorporadas manualmente se necessário.
 
 ## Decisões arquiteturais já tomadas
 
@@ -66,9 +74,11 @@ Ver seção "Questões técnicas em aberto" em
 
 ## Convenções de trabalho
 
-- Siga o estilo de código e as convenções já usadas no restante do
-  Verovio (nomenclatura de classes `Io*`, organização de headers/source,
-  etc.) em vez de introduzir um estilo novo isolado.
+- Todo código do exportador dotLottie vive dentro de `verovio/` (em
+  `verovio/src` e `verovio/include`), seguindo o estilo de código e as
+  convenções já usadas no restante do Verovio (nomenclatura de classes
+  `Io*`, organização de headers/source, etc.) em vez de introduzir um
+  estilo novo isolado.
 - Ao adicionar o exportador, espelhe a interface de linha de comando dos
   formatos já existentes (ex.: análogo a `--to svg`) até que haja uma razão
   concreta pra divergir.
