@@ -1,3 +1,5 @@
+See [CLAUDE.md](CLAUDE.md) for project context, architecture decisions, and working conventions.
+
 <!-- graft:start -->
 ## Graft — repo context graph
 

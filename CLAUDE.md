@@ -73,6 +73,13 @@ Ver seção "Questões técnicas em aberto" em
   horizontal) e como o host recorta o viewport visível.
 - Nome da flag de CLI e estrutura de arquivos do novo formato de exportação.
 
+## Notas operacionais
+
+- Ao rodar `git push`/`git pull` neste ambiente, o git emite o aviso
+  `git: 'credential-manager' não é um comando git`. É inofensivo — só um
+  `credential.helper` mal configurado no git global deste ambiente,
+  não impede push/pull nem indica problema de autenticação real.
+
 ## Convenções de trabalho
 
 - Todo código do exportador dotLottie vive dentro de `verovio/` (em
