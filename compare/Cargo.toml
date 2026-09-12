@@ -1,0 +1,19 @@
+[package]
+name = "compare"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+usvg = "0.48"
+resvg = "0.48"
+tiny-skia = "0.12"
+image = { version = "0.25", default-features = false, features = ["png"] }
+dotlottie-rs = { git = "https://github.com/LottieFiles/dotlottie-rs", features = [
+    "tvg",
+    "tvg-cpu",
+    "tvg-ttf",
+    "tvg-otf",
+    "tvg-png",
+] }

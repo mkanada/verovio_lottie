@@ -66,10 +66,15 @@ projeto. Por isso a raiz do repositório é dividida assim:
   espelha a estrutura do projeto Verovio original.
 - **`docs/`** — documentação do processo e das decisões deste projeto
   (este documento, decisões de arquitetura, notas de progresso).
-- Diretórios a criar conforme o projeto avança, na raiz (fora de
-  `verovio/`): ferramentas de comparação visual SVG vs. dotLottie
-  (renderização para PNG, diffing de imagens) e qualquer outro utilitário
-  de suporte ao desenvolvimento que não faça parte do Verovio em si.
+- **`compare/`** — ferramenta de linha de comando (Rust) para comparação
+  visual SVG vs. dotLottie: renderiza o SVG do Verovio para PNG (via
+  `resvg`), renderiza um frame de um Lottie/dotLottie para PNG (via
+  `dotlottie-rs`, o runtime oficial da LottieFiles) e gera uma imagem de
+  diferença pixel a pixel entre os dois. Ver `compare/README.md` para uso e
+  detalhes/pegadinhas da implementação.
+- Outros diretórios a criar conforme o projeto avança, na raiz (fora de
+  `verovio/`): qualquer utilitário adicional de suporte ao desenvolvimento
+  que não faça parte do Verovio em si.
 
 Essa separação existe para deixar claro o que é código vendorizado/fork
 (dentro de `verovio/`, sujeito às convenções do próprio Verovio) e o que é
@@ -151,11 +156,12 @@ tooling e documentação próprios deste projeto (na raiz).
 - Critério de aceite visual: renderizar a mesma partitura via SVG (caminho
   já existente do Verovio) e via `.lottie` (novo exportador), extrair um PNG
   de cada resultado e comparar as imagens.
-- A ferramenta específica para renderizar o `.lottie`/Lottie em PNG via
-  linha de comando ainda não foi escolhida — qualquer renderizador válido
-  serve, desde que permita extração de PNG de forma automatizável (ex.:
-  ThorVG, Skia/Skottie, rlottie, dotlottie-rs, entre outros). Essa escolha
-  fica para a fase de implementação/pesquisa técnica.
+- ✅ Ferramenta escolhida e implementada em `compare/`: `resvg` para SVG→PNG e
+  `dotlottie-rs` (runtime oficial da LottieFiles, com renderer de software
+  via ThorVG) para Lottie/dotLottie→PNG. A comparação em si (`compare diff`)
+  gera uma imagem de diferença (fundo esmaecido + pixels divergentes em
+  vermelho) mais estatísticas no terminal — a decisão de "passou/falhou"
+  continua sendo visual/manual, sem limiar automático definido ainda.
 
 ## Contexto do projeto maior: zywny
 
@@ -172,8 +178,8 @@ tooling e documentação próprios deste projeto (na raiz).
 Estes pontos foram deliberadamente deixados em aberto na fase de definição
 do projeto e devem ser resolvidos/pesquisados durante o desenvolvimento:
 
-1. Ferramenta exata de renderização Lottie → PNG usada nos testes de
-   comparação visual.
+1. ~~Ferramenta exata de renderização Lottie → PNG usada nos testes de
+   comparação visual.~~ Resolvido: `dotlottie-rs` (ver `compare/README.md`).
 2. Desenho detalhado do grafo da State Machine do dotLottie (estados,
    inputs, listeners) que satisfaça o requisito de "acesso direto a qualquer
    nota".
@@ -190,6 +196,10 @@ do projeto e devem ser resolvidos/pesquisados durante o desenvolvimento:
 
 1. ✅ Baixar/vendorizar o código-fonte do Verovio 6.3.0 em `verovio/` e
    inicializar o repositório git independente do `verovio_lottie`.
+1.5. ✅ Construir a ferramenta de comparação visual (`compare/`), validada
+   contra fixtures de exemplo (SVG real do Verovio + arquivos `.lottie`/
+   `.json` de exemplo) — falta apenas o exportador real do Verovio para
+   fechar o ciclo completo.
 2. Implementar um exportador dotLottie mínimo, capaz de reproduzir
    visualmente uma pauta simples e monofônica, validado por comparação
    PNG contra o SVG equivalente.

@@ -25,11 +25,13 @@ consumir esses `.lottie` junto com o `timemap` do Verovio.
   `fonts/`, `tools/`, etc., e seu próprio `.gitignore`). É onde o novo
   exportador dotLottie será implementado, seguindo as convenções do
   Verovio.
+- **`compare/`** — crate Rust com a ferramenta de comparação visual SVG vs.
+  dotLottie (`resvg` para SVG→PNG, `dotlottie-rs` para Lottie/dotLottie→PNG,
+  diff pixel a pixel). Ver `compare/README.md` antes de mexer nela — tem uma
+  pegadinha documentada sobre `set_frame`/`render` do dotlottie-rs.
 - **Raiz do repositório** — tudo que é deste projeto e não do Verovio em
-  si: `docs/` (documentação do processo), e, conforme o projeto avançar,
-  as ferramentas de comparação visual (renderização/diff de PNG entre SVG
-  e dotLottie) e outros utilitários de suporte. Não misture esse tooling
-  dentro de `verovio/`.
+  si: `docs/`, `compare/`, e outros utilitários de suporte conforme o
+  projeto avançar. Não misture esse tooling dentro de `verovio/`.
 - Histórico git **próprio e independente** do upstream do Verovio (sem
   submodule/subtree) — atualizações do Verovio original precisam ser
   incorporadas manualmente se necessário.
@@ -66,7 +68,6 @@ Trate estas decisões como fixas — não as reabra sem confirmar com o usuário
 Ver seção "Questões técnicas em aberto" em
 `docs/descricao-do-projeto.md`. Resumo:
 
-- Ferramenta de renderização Lottie→PNG para os testes de comparação visual.
 - Desenho detalhado do grafo da State Machine (estados/inputs/listeners).
 - Disposição dos layers de página dentro da composição única (ex.: trilha
   horizontal) e como o host recorta o viewport visível.
