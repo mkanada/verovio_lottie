@@ -107,3 +107,34 @@ sites já mapeados (não há outros no `View` hoje).
 - Corpus real (`compare-corpus.sh`) continua passando sem regressão — nenhum
   arpeggio/glissando real nele, então isso só confirma que a mudança (se
   houver) não quebrou nada mais.
+
+## Notas de execução
+
+**Hipótese confirmada — nenhuma mudança de código.**
+
+MEI de teste criado em `compare/out/d04-rotacao-teste.mei` (fora do git, como
+todo `compare/out/`, mas registrado aqui para reprodução futura): compasso 1
+com um acorde de 4 notas + `<arpeg>` (ângulo fixo `-90`, caminho de
+`DrawArpeg`); compasso 2 com `<gliss>` claramente ascendente (dó4→dó5);
+compasso 3 com `<gliss>` claramente descendente (dó5→dó4), cobrindo os dois
+sentidos de `atan2` em `DrawGliss`.
+
+`compare/scripts/compare-page.sh compare/out/d04-rotacao-teste.mei 1`:
+
+- Símbolo de arpeggio (linha ondulada vertical à esquerda do acorde):
+  posição e orientação **idênticas** em recorte lado a lado do SVG e do
+  Lottie (mesma coluna de pixels, mesma forma).
+- As duas linhas de glissando (ascendente e descendente) aparecem no
+  **mesmo sentido diagonal** nas duas renderizações — nenhuma espelhada.
+- `compare diff --tolerance 32`: 13593/6237000 pixels (0,2179%), dentro da
+  faixa de ruído de antialiasing já observada no projeto (categoria 2 de
+  `relatorio-paridade.md`; comparável à média 0,2290% medida em D02 pós-
+  rodapé). Inspeção do PNG de diff mostra só pontos isolados espalhados,
+  sem mancha estrutural na região do arpeggio/gliss.
+
+Conclusão: `angle` chega ao `LottieDeviceContext::RotateGraphic` no mesmo
+sistema de coordenadas (y para baixo) usado pelo `SvgDeviceContext`, e o
+pivô de `WriteTransformWithRotation` (`p = a = origin`) já rotaciona em
+torno do ponto certo. Nenhuma inversão de sinal nem correção de pivô foi
+necessária. Não rodei `compare-corpus.sh`: como nenhum arquivo de código
+foi alterado, não há risco de regressão a verificar.

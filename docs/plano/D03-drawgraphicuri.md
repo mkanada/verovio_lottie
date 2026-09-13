@@ -84,3 +84,13 @@ Ficam bloqueados até a decisão acima. Se aprovado com resolução local:
 - `compare/scripts/compare-page.sh` mostra a imagem na posição/tamanho
   certos no PNG do Lottie comparado ao do SVG.
 - `unzip -l` no pacote gerado confirma o asset de imagem embutido.
+
+## Decisão (2026-09-13)
+
+Usuário optou por **não implementar agora**: `DrawGraphicUri` continua como
+stub vazio (`verovio/src/lottiedevicecontext.cpp:526`), documentado aqui como
+limitação conhecida. Nenhuma peça do corpus atual usa `<graphic>`, então o
+trabalho seria especulativo. Revisitar quando uma peça real do zywny
+precisar de imagem raster embutida — nesse momento, refazer a pergunta de
+"Decisão necessária" acima (resolução local vs. URL vs. referência não
+resolvida) antes de escrever qualquer código.

@@ -109,3 +109,74 @@ aqui).
   não pioram em relação ao que D01 já deve ter estabelecido (se D01 já
   tiver rodado antes deste passo) ou em relação a `relatorio-paridade.md`
   (se D05 rodar antes de D01).
+
+## Notas de execução
+
+Os 4 casos foram verificados. Um achou um **bug real, mas na ferramenta
+`compare`, não no exportador** — corrigido. Os outros 3 bateram sem
+correção.
+
+**1. Opacidade — divergiu, corrigido (na ferramenta `compare`, não no
+exportador).** A premissa do plano de que `Grieg_Butterfly_Op43_No1.mei`
+exercitava isso não se confirmou: o `<annot>` desse arquivo está no
+`meiHead` (metadado), não em `<annot type="score">` dentro de `<music>` — o
+corpus inteiro tem zero `<annot>` no corpo (confirmado por varredura). Criei
+`compare/out/d05-opacidade-teste.mei` com `<annot type="score" startid=...
+endid=...>` sobre um acorde, que aciona `View::DrawAnnotScore`
+(`dc->SetBrush(0.5, COLOR_RED)`). Comparando os PNGs, a caixa saía visivelmente
+mais escura/acinzentada no Lottie que no SVG (rosa "empoeirado" vs.
+rosa-salmão vivo). Investigação por pixel bruto (RGBA, não só o crop
+composto): SVG dava `(255,0,0,128)` (alpha reto), Lottie dava `(127,0,0,127)`
+— um padrão clássico de **alpha premultiplicado** sendo tratado como reto.
+Causa raiz: `compare/src/main.rs` (`lottie_to_png`/`sm_render`) pedia o
+buffer do ThorVG com `ColorSpace::ARGB8888`, que a própria documentação do
+ThorVG (`thorvg.h`) marca como premultiplicado, e escrevia os canais R/G/B
+direto no PNG como se fossem retos. Corrigido trocando para
+`ColorSpace::ARGB8888S` (variante reta, já disponível na revisão vendorizada
+do `dotlottie-rs`) nos dois pontos que chamam `set_sw_target`. Depois da
+correção: `(255,0,0,127)` — igual ao SVG a menos de 1 de arredondamento no
+alpha. **Não era bug do exportador** — `fillOpacity`/`strokeOpacity` já
+saíam corretos do `LottieDeviceContext`/`LottieWriter`; só a extração do
+buffer de pixels do `compare` estava incompatível com o color space pedido.
+Documentado em `compare/README.md` como nova "pegadinha" (mesmo padrão de
+D01-2/D01-3). `compare-corpus.sh 32` não mudou (0,0196%–0,5212%/média
+0,2290%, idêntico à baseline de D02) porque nenhuma peça real do corpus tem
+preenchimento com opacidade fracionária — o bug só aparece em casos de
+borda como este.
+
+**2. Tracejado — bateu, sem correção.** Linha de oitava (`<octave>`) na
+página 4 de `Chopin_Etude_Op10_No9.mei`: mesmo padrão traço/vão (`36 72`) e
+mesmo gancho vertical no fim da linha, nos dois lados. Diff da página:
+0,0728% (dentro da faixa normal do corpus).
+
+**3. Visibilidade — bateu, sem correção, mas a premissa do plano também não
+se confirmou.** Os 4 hits de `grep 'visible="false"'` em
+`Chopin_Etude_Op10_No9.mei` são todos `bracket.visible="false"` em
+`<tupletSpan>` — atributo de `AttTupletVis` (controla só o colchete do
+tuplet), não de `AttVisibility`/`@visible`, que é o que
+`LottieDeviceContext::StartGraphic` e `SvgDeviceContext::StartGraphic`
+realmente leem. O corpus inteiro tem zero ocorrências reais de `@visible` em
+elemento que tenha `AttVisibility` (`note`, `chord`, `clef`, `keySig`,
+`meterSig`, `stem`, `barLine`, `divLine`, `layer`, `mRest`, `meterSigGrp`,
+`staff`). Criei `compare/out/d05-visibilidade-teste.mei` (acorde de 3 notas,
+a do meio com `visible="false"`) para exercitar de verdade o código: a nota
+do meio não aparece em nenhum dos dois PNGs, diff 0,2311% (ruído de
+antialiasing disperso, sem mancha estrutural — inspecionado via imagem de
+diff). **Achado colateral, fora de escopo, não corrigido:** o CLI
+`--show-hidden` (que faz `Clef`/`KeySig`/`MeterSig` e a visibilidade CSS do
+SVG mostrarem elementos ocultos, para depuração) só é conectado à
+`SvgDeviceContext` (`toolkit.cpp`, `RenderToSVG`) — nenhum caminho de
+`RenderToLottie`/`RenderToDotLottieFile` propaga essa opção pro
+`LottieDeviceContext`, que sempre omite elementos com `visible="false"`
+independente da flag. Nos testes deste passo (sem `--show-hidden`, que é o
+uso normal) o comportamento bate; a lacuna só importa se o zywny algum dia
+precisar de um modo de depuração equivalente ao `--show-hidden` do SVG.
+
+**4. Cue — bateu, sem correção.** Notas grace (`grace="unknown"`) em
+`Scarlatti_Sonata_in_C-major.mei`, página 1 (localizadas via
+`scale(0.54, 0.54)` no SVG — 0,72 × `m_graceFactor` padrão de 0,75):
+tamanho, posição e beam idênticos aos do SVG. Diff da página: 0,0967%.
+
+**Não-regressão:** `compare-corpus.sh 32` rodado no fim (após a correção do
+`compare`) deu 0,0196%–0,5212%/média 0,2290% em 34 páginas — idêntico à
+baseline registrada em D02, sem regressão.

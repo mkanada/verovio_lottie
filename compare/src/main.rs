@@ -292,9 +292,16 @@ fn lottie_to_png(
     // dotlottie-rs (ver examples/simple_player.rs) inicializa o renderer contra
     // o alvo já configurado; carregar antes faz o load "ter sucesso" (retorna
     // Ok) mas sem nenhuma animação de fato ativa no renderer.
+    //
+    // ARGB8888S (não ARGB8888): o "S" pede alpha reto (straight) ao ThorVG.
+    // ARGB8888 é alpha premultiplicado (ver thorvg.h: "Colors are
+    // alpha-premultiplied") — com ele, um preenchimento com opacidade < 100%
+    // (ex. a caixa vermelha semitransparente de <annot type="score">) sai do
+    // buffer já escurecido (RGB × alpha), mas o código abaixo escreve esse RGB
+    // direto no PNG como se fosse reto, dessaturando a cor (achado do D05).
     let mut buffer: Vec<u32> = vec![0; (width as usize) * (height as usize)];
     player
-        .set_sw_target(&mut buffer, width, height, dotlottie_rs::ColorSpace::ARGB8888)
+        .set_sw_target(&mut buffer, width, height, dotlottie_rs::ColorSpace::ARGB8888S)
         .context("configurando destino de renderização por software")?;
 
     match input.extension().and_then(|e| e.to_str()) {
@@ -531,8 +538,9 @@ fn sm_render(
 
     let mut player = dotlottie_rs::Player::new();
     let mut buffer: Vec<u32> = vec![0; (width as usize) * (height as usize)];
+    // ARGB8888S (alpha reto) — ver o comentário equivalente em lottie_to_png (D05).
     player
-        .set_sw_target(&mut buffer, width, height, dotlottie_rs::ColorSpace::ARGB8888)
+        .set_sw_target(&mut buffer, width, height, dotlottie_rs::ColorSpace::ARGB8888S)
         .context("configurando destino de renderização por software")?;
 
     let data = std::fs::read(input).with_context(|| format!("lendo {}", input.display()))?;

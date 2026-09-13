@@ -120,6 +120,41 @@ próprio exemplo oficial da lib (`examples/simple_player.rs`, que usa `let _ =
 player.set_frame(...)`). Se você mexer nesse código, não troque os avisos por
 `?`/`.unwrap()` sem reler esta seção.
 
+## Pegadinha do dotlottie-rs (resolvida em D05): `ARGB8888` é premultiplicado,
+## desaturando qualquer preenchimento com opacidade fracionária no PNG
+
+Achado ao validar `docs/plano/D05-casos-de-borda-estilo.md` (opacidade da
+caixa de `<annot type="score">`, `fillOpacity`/`strokeOpacity` em geral): o
+`lottie-to-png`/`sm-render` chamavam `set_sw_target(..., ColorSpace::ARGB8888)`
+e escreviam os canais R/G/B do buffer direto no PNG de saída, como se fossem
+alpha reto (straight). Mas o ThorVG documenta `ARGB8888` como
+**alpha-premultiplicado** (`thorvg.h`: "Colors are alpha-premultiplied") — ou
+seja, cada canal de cor já vem multiplicado pelo próprio alpha. Para uma
+forma vermelha pura (`#FF0000`) a 50% de opacidade, o buffer devolvia
+`(127, 0, 0, 127)` (premultiplicado) em vez de `(255, 0, 0, 128)` (reto, o que
+o `resvg`/SVG de referência produz). Gravar esse RGB premultiplicado como se
+fosse reto no PNG dessatura a cor — o pixel final, quando composto sobre
+fundo branco por qualquer visualizador/ferramenta que assume alpha reto, sai
+mais escuro/acinzentado que o SVG de referência (achado visualmente como um
+rosa "empoeirado" em vez do rosa-salmão vivo do lado SVG).
+
+**Não era um bug do exportador**: o `LottieDeviceContext`/`LottieWriter` já
+escreviam `fillOpacity`/`strokeOpacity` corretos no JSON; o ThorVG também
+renderizava a opacidade certa — só a extração do buffer de pixels do
+`compare` estava incompatível com o color space pedido.
+
+**Resolvido em D05** trocando `ColorSpace::ARGB8888` por
+`ColorSpace::ARGB8888S` (variante "S" = *straight*, alpha reto, disponível na
+mesma revisão do `dotlottie-rs` já vendorizada — usada inclusive nos
+exemplos oficiais da lib) nos dois pontos de `src/main.rs` que chamam
+`set_sw_target` para gerar PNGs de comparação (`lottie_to_png` e
+`sm_render`). Efeito confirmado com um MEI de teste (`<annot type="score">`
+com `fill-opacity="0.5"`): pixel do PNG do Lottie foi de `(127,0,0,127)`
+(premultiplicado, errado) para `(255,0,0,127)` (reto, igual ao SVG a menos
+de arredondamento do alpha). Corpus completo (`compare-corpus.sh 32`) não
+muda — nenhuma peça do corpus tem preenchimento com opacidade fracionária
+fora deste caso, então o efeito só aparece em casos de borda como este.
+
 ## Pegadinha do `resvg` (resolvida em D01-3): texto comum centralizado/à
 ## direita com `<title>` aninhado media a largura errado (achado em D01)
 
