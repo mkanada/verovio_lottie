@@ -191,9 +191,9 @@ Decisões **já tomadas** (não reabrir): ver "Decisões arquiteturais já tomad
 
 | Passo | Título | Depende de | Decisão | Status |
 | --- | --- | --- | --- | --- |
-| [A01](A01-esqueleto-lottiedevicecontext.md) | Esqueleto do `LottieDeviceContext` | — | — | pendente |
-| [A02](A02-arvore-de-graficos.md) | Árvore interna (IR) de grupos e páginas | A01 | — | pendente |
-| [A03](A03-serializador-lottie-json.md) | Serializador `LottieWriter` | A02 | — | pendente |
+| [A01](A01-esqueleto-lottiedevicecontext.md) | Esqueleto do `LottieDeviceContext` | — | — | concluído |
+| [A02](A02-arvore-de-graficos.md) | Árvore interna (IR) de grupos e páginas | A01 | — | concluído |
+| [A03](A03-serializador-lottie-json.md) | Serializador `LottieWriter` | A02 | — | concluído |
 | [A04](A04-toolkit-e-cli-lottie-json.md) | `Toolkit::RenderToLottie` + CLI `lottie` | A03 | D-CLI | pendente |
 | [A05](A05-script-de-comparacao.md) | Script de comparação por página + fontes no `compare` | A04 | — | pendente |
 | [A06](A06-primitivas-retas-e-cores.md) | Linhas, polígonos, retângulos, elipses e cores | A05 | — | pendente |

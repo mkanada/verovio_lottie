@@ -70,4 +70,17 @@ Estruturas de dados, JSON, Toolkit, CLI.
 
 ## Notas de execução
 
-_(preencher ao executar)_
+- Não havia `.clang-format` nem binário `clang-format` disponíveis neste
+  ambiente (apesar do README do plano citar o primeiro); os arquivos novos
+  foram formatados manualmente imitando `svgdevicecontext.h`/`.cpp`.
+- `LottieDeviceContext()` chama `DeviceContext(LOTTIE_DEVICE_CONTEXT)`
+  diretamente na lista de inicialização (sem corpo), igual ao padrão usado
+  por `SvgDeviceContext`.
+- `cmake ../cmake && make -j4` reconfigurou e recompilou o projeto inteiro
+  nesta primeira execução (sem build incremental prévio nesta máquina); um
+  segundo `make -j4` após tocar só em `lottiedevicecontext.cpp` recompila
+  em incremental normalmente e não gerou warnings.
+- Critérios de aceite confirmados: build limpo e
+  `verovio -t svg corpus/mei/Grieg_Little_bird_Op43_No4.mei -o /tmp/vrv-a01/grieg --resource-path verovio/data`
+  continua gerando `grieg.svg` normalmente (só os warnings pré-existentes de
+  `tie`/`tstamp`, sem relação com esta mudança).

@@ -286,6 +286,7 @@ enum ClassId : uint16_t {
     //
     BBOX_DEVICE_CONTEXT,
     SVG_DEVICE_CONTEXT,
+    LOTTIE_DEVICE_CONTEXT,
     CUSTOM_DEVICE_CONTEXT,
     // Pseudo ids for custom factory functions
     FACTORY_STAGEDIR,

@@ -146,4 +146,19 @@ JSON, formas reais, interpretação de cores (só guardar a string), texto.
 
 ## Notas de execução
 
-_(preencher ao executar)_
+- Estrutura de `lottiegeometry.h` seguida como sugerida, sem mudanças de nomes.
+- `StartCustomGraphic`/`EndCustomGraphic` também registram `gId` em `m_idMap`
+  quando não vazio (ex.: `keyAccid->GetID()` em `view_element.cpp:1164`),
+  espelhando o SVG: lá `AppendIdAndClass` grava o atributo `id` tanto para
+  `StartGraphic` quanto para `StartCustomGraphic`, e `ResumeGraphic` busca por
+  esse atributo sem distinguir a origem. O passo não mencionava isso
+  explicitamente, mas é necessário para paridade de comportamento.
+- `AddShape` foi implementado conforme o passo, mas ainda não tem nenhum
+  chamador (fica para A06+); não gera warning de função não usada por ser
+  método de classe, não função estática.
+- Build é C++20 (`CMAKE_CXX_STANDARD 20`), então `std::make_unique` está
+  disponível e foi usado (já aparece uma vez em `src/object.cpp`).
+- Build limpo (`cmake ../cmake && make -j4`, sem warnings novos) e a geração
+  de SVG do corpus Grieg continua idêntica (mesmos warnings pré-existentes de
+  `tie`/`tstamp`, sem relação com esta mudança). Validação estrutural da IR
+  fica para A04, como previsto no critério de aceite.

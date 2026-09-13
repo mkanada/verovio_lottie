@@ -105,4 +105,49 @@ Toolkit e CLI (A04), parser de cores CSS completo (A06), markers e state machine
 
 ## Notas de execução
 
-_(preencher ao executar)_
+- `LottieWriter` foi implementado inteiramente com `std::ostringstream`
+  (`imbue(std::locale::classic())`) e concatenação de strings, sem `jsonxx`,
+  conforme o item 8. Números passam por um helper `FormatNumber` (fixo em 3
+  casas, zeros à direita e o `.` removidos, `"-0"` normalizado para `"0"`).
+- Resolução de cor: `colorCss` só é aceito nos formatos `#RRGGBB` e `#RGB`
+  (`ParseHexColor`); qualquer outro valor (nome CSS, `rgb()`, etc.) é
+  silenciosamente ignorado e a cor herdada do grupo pai é mantida — é o
+  comportamento esperado nesta etapa (A06 completa o parser CSS). A raiz da
+  página nunca tem `colorCss` (é criada por `StartPage`, não por
+  `StartGraphic`), então a recursão começa em preto como pedido.
+- Cores inteiras da IR (`COLOR_BLACK`, `COLOR_WHITE`, etc., e o resultado de
+  `ParseHexColor`) já são inteiros RGB de 24 bits empacotados
+  (`0xRRGGBB`), iguais aos usados internamente por
+  `SvgDeviceContext::GetColor`; a conversão para componentes 0..1 é só
+  deslocamento de bits (`ColorIntToRgb01`), sem precisar replicar o `switch`
+  da tabela — os `case` nomeados resultam nos mesmos bits.
+- Tamanho/posição por camada seguem exatamente as fórmulas do passo
+  (`ComputePageMetrics`): ramo não-mm de `Commit` para `Wpx`/`Hpx`, viewBox
+  interno truncado com `int()`, `S = min(Wpx/VW, Hpx/VH)`,
+  `tx`/`ty` centralizando, depois `translate(originX, originY)`. `w`/`h` da
+  composição usam o máximo entre as páginas, mas cada camada calcula seu
+  próprio `S`/`tx`/`ty` a partir do **seu** `Wpx`/`Hpx` (não da composição) —
+  suficiente enquanto todas as páginas tiverem o mesmo tamanho; revisitar em
+  D-LAYOUT-PAGINAS se páginas de tamanhos diferentes precisarem de
+  alinhamento explícito dentro da composição.
+- Sinal da rotação (`RotateGraphic`) foi mantido igual ao ângulo recebido
+  (sem inverter), como no SVG; não confirmado empiricamente (só 2 chamadas no
+  `View`) — fica para validação visual na fase D, como o próprio passo já
+  observava.
+- Validação feita fora do CMake do Verovio (o `AddShape`/`LottieDeviceContext`
+  ainda não populam formas de verdade — isso só começa em A06+): compilei
+  `lottiewriter.cpp` isolado com um `main()` de teste construindo uma
+  `LottiePage` sintética (grupo com id + rect com `fillColor` herdado, grupo
+  filho com `colorCss="#f00"` + path com 1 subpath fechado e stroke
+  tracejado herdando a cor vermelha) e validei o JSON resultante com
+  `python3 -m json.tool`. Confirmado: JSON válido, ordem de pintura invertida
+  correta (filho mais recente aparece primeiro em `it`), herança de cor
+  funcionando (preto herdado no rect, vermelho herdado no stroke do path), e
+  a matemática de `p`/`s` da camada batendo à mão (`w=210,h=297`,
+  `originX=originY=5`, `viewBoxFactor=10` → `s=[10,10,100]`,
+  `p=[0.5,0.5,0]`).
+- Critérios de aceite confirmados: `cmake ../cmake && make -j4` limpo (sem
+  warnings novos, checado recompilando só `lottiewriter.cpp`) e
+  `verovio -t svg corpus/mei/Grieg_Little_bird_Op43_No4.mei -o /tmp/vrv-a03/grieg --resource-path verovio/data`
+  continua gerando o SVG normalmente (mesmos warnings pré-existentes de
+  `tie`/`tstamp`).
