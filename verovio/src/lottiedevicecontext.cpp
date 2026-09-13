@@ -22,6 +22,79 @@
 namespace vrv {
 
 //----------------------------------------------------------------------------
+// Local helpers
+//----------------------------------------------------------------------------
+
+namespace {
+
+    LottieVec ToVec(int x, int y)
+    {
+        return LottieVec{ double(x), double(y) };
+    }
+
+    LottieVec ToVec(const Point &p)
+    {
+        return ToVec(p.x, p.y);
+    }
+
+    LottieVec Sub(const LottieVec &a, const LottieVec &b)
+    {
+        return LottieVec{ a.x - b.x, a.y - b.y };
+    }
+
+    LottieVec Scale(const LottieVec &v, double factor)
+    {
+        return LottieVec{ v.x * factor, v.y * factor };
+    }
+
+    // A subpath made of straight segments only (no curve tangents).
+    LottieBezier MakeStraightBezier(const std::vector<LottieVec> &vertices, bool closed)
+    {
+        LottieBezier bezier;
+        bezier.v = vertices;
+        bezier.i.assign(vertices.size(), LottieVec());
+        bezier.o.assign(vertices.size(), LottieVec());
+        bezier.closed = closed;
+        return bezier;
+    }
+
+    // The SVG output always has a visible outline (global CSS: "stroke:currentColor"), so every
+    // shape in the Lottie IR carries an explicit stroke too. Width defaults to 1 (SVG default),
+    // color/opacity stay COLOR_NONE / default so they are inherited from the enclosing group.
+    void ApplyStrokeFromPen(LottieShape &shape, const Pen &pen)
+    {
+        shape.hasStroke = true;
+        shape.strokeWidth = (pen.GetWidth() > 0) ? pen.GetWidth() : 1;
+        shape.strokeColor = pen.HasColor() ? pen.GetColor() : COLOR_NONE;
+        if (pen.HasOpacity()) {
+            shape.strokeOpacity = pen.GetOpacity();
+        }
+        shape.lineCap = pen.GetLineCap();
+        shape.lineJoin = pen.GetLineJoin();
+    }
+
+    // Only DrawLine, DrawPolyline and DrawPolygon reproduce dashing in SVG (DrawRoundedRectangle
+    // and DrawEllipse never call AppendStrokeDashArray there either).
+    void ApplyDashFromPen(LottieShape &shape, const Pen &pen)
+    {
+        if (pen.GetDashLength() > 0) {
+            shape.dashLength = pen.GetDashLength();
+            shape.gapLength = (pen.GetGapLength() > 0) ? pen.GetGapLength() : pen.GetDashLength();
+        }
+    }
+
+    void ApplyFillFromBrush(LottieShape &shape, const Brush &brush)
+    {
+        shape.hasFill = true;
+        shape.fillColor = brush.HasColor() ? brush.GetColor() : COLOR_NONE;
+        if (brush.HasOpacity()) {
+            shape.fillOpacity = brush.GetOpacity();
+        }
+    }
+
+} // namespace
+
+//----------------------------------------------------------------------------
 // LottieDeviceContext
 //----------------------------------------------------------------------------
 
@@ -50,31 +123,261 @@ Point LottieDeviceContext::GetLogicalOrigin()
     return Point(m_originX, m_originY);
 }
 
-void LottieDeviceContext::DrawQuadBezierPath(Point bezier[3]) {}
+void LottieDeviceContext::DrawQuadBezierPath(Point bezier[3])
+{
+    assert(!m_penStack.empty());
+    const Pen &currentPen = m_penStack.top();
 
-void LottieDeviceContext::DrawCubicBezierPath(Point bezier[4]) {}
+    const LottieVec p0 = ToVec(bezier[0]);
+    const LottieVec p1 = ToVec(bezier[1]);
+    const LottieVec p2 = ToVec(bezier[2]);
 
-void LottieDeviceContext::DrawCubicBezierPathFilled(Point bezier1[4], Point bezier2[4]) {}
+    LottieBezier path = MakeStraightBezier({ p0, p2 }, false);
+    // Degree-elevated to a cubic (C1 = P0 + 2/3(P1-P0), C2 = P2 + 2/3(P1-P2)); as a tangent
+    // relative to its vertex, C1-P0 and C2-P2 reduce to 2/3 of P1-P0 and P1-P2.
+    path.o[0] = Scale(Sub(p1, p0), 2.0 / 3.0);
+    path.i[1] = Scale(Sub(p1, p2), 2.0 / 3.0);
 
-void LottieDeviceContext::DrawBentParallelogramFilled(Point side[4], int height) {}
+    LottieShape shape;
+    shape.paths.push_back(std::move(path));
 
-void LottieDeviceContext::DrawCircle(int x, int y, int radius) {}
+    // fill="none" in SVG: no ApplyFillFromBrush call, hasFill stays false.
+    ApplyStrokeFromPen(shape, currentPen);
+    // linecap/linejoin are fixed to round in SVG, regardless of the pen.
+    shape.lineCap = LINECAP_ROUND;
+    shape.lineJoin = LINEJOIN_ROUND;
+    ApplyDashFromPen(shape, currentPen);
 
-void LottieDeviceContext::DrawEllipse(int x, int y, int width, int height) {}
+    this->AddShape(std::move(shape));
+}
+
+void LottieDeviceContext::DrawCubicBezierPath(Point bezier[4])
+{
+    assert(!m_penStack.empty());
+    const Pen &currentPen = m_penStack.top();
+
+    const LottieVec p0 = ToVec(bezier[0]);
+    const LottieVec p1 = ToVec(bezier[1]);
+    const LottieVec p2 = ToVec(bezier[2]);
+    const LottieVec p3 = ToVec(bezier[3]);
+
+    LottieBezier path = MakeStraightBezier({ p0, p3 }, false);
+    path.o[0] = Sub(p1, p0);
+    path.i[1] = Sub(p2, p3);
+
+    LottieShape shape;
+    shape.paths.push_back(std::move(path));
+
+    // fill="none" in SVG: no ApplyFillFromBrush call, hasFill stays false.
+    ApplyStrokeFromPen(shape, currentPen);
+    shape.lineCap = LINECAP_ROUND;
+    shape.lineJoin = LINEJOIN_ROUND;
+    ApplyDashFromPen(shape, currentPen);
+
+    this->AddShape(std::move(shape));
+}
+
+void LottieDeviceContext::DrawCubicBezierPathFilled(Point bezier1[4], Point bezier2[4])
+{
+    assert(!m_penStack.empty());
+    assert(!m_brushStack.empty());
+
+    const Pen &currentPen = m_penStack.top();
+    const Brush &currentBrush = m_brushStack.top();
+
+    const LottieVec b1_0 = ToVec(bezier1[0]);
+    const LottieVec b1_1 = ToVec(bezier1[1]);
+    const LottieVec b1_2 = ToVec(bezier1[2]);
+    const LottieVec b1_3 = ToVec(bezier1[3]);
+    const LottieVec b2_0 = ToVec(bezier2[0]);
+    const LottieVec b2_1 = ToVec(bezier2[1]);
+    const LottieVec b2_2 = ToVec(bezier2[2]);
+
+    // SVG: M b1[0] C b1[1] b1[2] b1[3] C b2[2] b2[1] b2[0] (no Z; the closing segment
+    // b2[0]->b1[0] only exists in Lottie, where every subpath must state c=true explicitly).
+    LottieBezier path = MakeStraightBezier({ b1_0, b1_3, b2_0 }, true);
+    path.o[0] = Sub(b1_1, b1_0);
+    path.i[1] = Sub(b1_2, b1_3);
+    path.o[1] = Sub(b2_2, b1_3);
+    path.i[2] = Sub(b2_1, b2_0);
+    // i[0] and o[2] stay (0,0): the Lottie-only closing segment is straight.
+
+    LottieShape shape;
+    shape.paths.push_back(std::move(path));
+
+    ApplyStrokeFromPen(shape, currentPen);
+    shape.lineCap = LINECAP_ROUND;
+    shape.lineJoin = LINEJOIN_ROUND;
+    ApplyFillFromBrush(shape, currentBrush);
+
+    this->AddShape(std::move(shape));
+}
+
+void LottieDeviceContext::DrawBentParallelogramFilled(Point side[4], int height)
+{
+    assert(!m_penStack.empty());
+    assert(!m_brushStack.empty());
+
+    const Pen &currentPen = m_penStack.top();
+    const Brush &currentBrush = m_brushStack.top();
+
+    const LottieVec s0 = ToVec(side[0]);
+    const LottieVec s1 = ToVec(side[1]);
+    const LottieVec s2 = ToVec(side[2]);
+    const LottieVec s3 = ToVec(side[3]);
+    const LottieVec s0h{ s0.x, s0.y + height };
+    const LottieVec s3h{ s3.x, s3.y + height };
+
+    // SVG: M s0 C s1 s2 s3 L s3+h C (s2+h)(s1+h)(s0+h) Z.
+    LottieBezier path = MakeStraightBezier({ s0, s3, s3h, s0h }, true);
+    path.o[0] = Sub(s1, s0);
+    path.i[1] = Sub(s2, s3);
+    // o[1]/i[2] stay (0,0): s3 -> s3+h is the straight "L" segment.
+    path.o[2] = Sub(s2, s3);
+    path.i[3] = Sub(s1, s0);
+    // o[3]/i[0] stay (0,0): the closing "Z" segment (s0+h -> s0) is straight.
+
+    LottieShape shape;
+    shape.paths.push_back(std::move(path));
+
+    ApplyStrokeFromPen(shape, currentPen);
+    shape.lineCap = LINECAP_ROUND;
+    shape.lineJoin = LINEJOIN_ROUND;
+    ApplyFillFromBrush(shape, currentBrush);
+
+    this->AddShape(std::move(shape));
+}
+
+void LottieDeviceContext::DrawCircle(int x, int y, int radius)
+{
+    this->DrawEllipse(x - radius, y - radius, 2 * radius, 2 * radius);
+}
+
+void LottieDeviceContext::DrawEllipse(int x, int y, int width, int height)
+{
+    assert(!m_penStack.empty());
+    assert(!m_brushStack.empty());
+
+    const Pen &currentPen = m_penStack.top();
+    const Brush &currentBrush = m_brushStack.top();
+
+    // Integer division on purpose: it reproduces the same half-pixel truncation as
+    // SvgDeviceContext::DrawEllipse, which also declares rw/rh as int.
+    const int rw = width / 2;
+    const int rh = height / 2;
+
+    LottieShape shape;
+    shape.kind = LottieShapeKind::Ellipse;
+    shape.center = ToVec(x + rw, y + rh);
+    shape.size = ToVec(2 * rw, 2 * rh);
+
+    ApplyStrokeFromPen(shape, currentPen);
+    ApplyFillFromBrush(shape, currentBrush);
+
+    this->AddShape(std::move(shape));
+}
 
 void LottieDeviceContext::DrawEllipticArc(int x, int y, int width, int height, double start, double end) {}
 
-void LottieDeviceContext::DrawLine(int x1, int y1, int x2, int y2) {}
+void LottieDeviceContext::DrawLine(int x1, int y1, int x2, int y2)
+{
+    assert(!m_penStack.empty());
+    const Pen &currentPen = m_penStack.top();
 
-void LottieDeviceContext::DrawPolyline(int n, Point points[], bool close) {}
+    LottieShape shape;
+    shape.paths.push_back(MakeStraightBezier({ ToVec(x1, y1), ToVec(x2, y2) }, false));
 
-void LottieDeviceContext::DrawPolygon(int n, Point points[]) {}
+    ApplyStrokeFromPen(shape, currentPen);
+    ApplyDashFromPen(shape, currentPen);
 
-void LottieDeviceContext::DrawRectangle(int x, int y, int width, int height) {}
+    this->AddShape(std::move(shape));
+}
+
+void LottieDeviceContext::DrawPolyline(int n, Point points[], bool close)
+{
+    assert(!m_penStack.empty());
+    const Pen &currentPen = m_penStack.top();
+
+    std::vector<LottieVec> vertices;
+    vertices.reserve(n);
+    for (int i = 0; i < n; ++i) {
+        vertices.push_back(ToVec(points[i]));
+    }
+
+    LottieShape shape;
+    // No fill: mirrors SvgDeviceContext::DrawPolyline, which never sets a fill color and only
+    // forces fill="none" explicitly when n > 2 (for n <= 2 the enclosed area is zero anyway).
+    shape.paths.push_back(MakeStraightBezier(vertices, close));
+
+    ApplyStrokeFromPen(shape, currentPen);
+    ApplyDashFromPen(shape, currentPen);
+
+    this->AddShape(std::move(shape));
+}
+
+void LottieDeviceContext::DrawPolygon(int n, Point points[])
+{
+    assert(!m_penStack.empty());
+    assert(!m_brushStack.empty());
+
+    const Pen &currentPen = m_penStack.top();
+    const Brush &currentBrush = m_brushStack.top();
+
+    std::vector<LottieVec> vertices;
+    vertices.reserve(n);
+    for (int i = 0; i < n; ++i) {
+        vertices.push_back(ToVec(points[i]));
+    }
+
+    LottieShape shape;
+    shape.paths.push_back(MakeStraightBezier(vertices, true));
+
+    ApplyStrokeFromPen(shape, currentPen);
+    ApplyDashFromPen(shape, currentPen);
+    ApplyFillFromBrush(shape, currentBrush);
+
+    this->AddShape(std::move(shape));
+}
+
+void LottieDeviceContext::DrawRectangle(int x, int y, int width, int height)
+{
+    this->DrawRoundedRectangle(x, y, width, height, 0);
+}
 
 void LottieDeviceContext::DrawRotatedText(const std::string &text, int x, int y, double angle) {}
 
-void LottieDeviceContext::DrawRoundedRectangle(int x, int y, int width, int height, int radius) {}
+void LottieDeviceContext::DrawRoundedRectangle(int x, int y, int width, int height, int radius)
+{
+    assert(!m_penStack.empty());
+    assert(!m_brushStack.empty());
+
+    const Pen &currentPen = m_penStack.top();
+    const Brush &currentBrush = m_brushStack.top();
+
+    // Negative heights or widths are not allowed in SVG; normalize the same way
+    // SvgDeviceContext::DrawRoundedRectangle does.
+    if (height < 0) {
+        height = -height;
+        y -= height;
+    }
+    if (width < 0) {
+        width = -width;
+        x -= width;
+    }
+
+    LottieShape shape;
+    shape.kind = LottieShapeKind::Rect;
+    // Exact (non-truncated) center: unlike DrawEllipse, the SVG <rect> keeps x/y/width/height
+    // untouched, so converting to Lottie's center+size form must not introduce new rounding.
+    shape.center = LottieVec{ x + width / 2.0, y + height / 2.0 };
+    shape.size = ToVec(width, height);
+    shape.radius = radius;
+
+    ApplyStrokeFromPen(shape, currentPen);
+    ApplyFillFromBrush(shape, currentBrush);
+
+    this->AddShape(std::move(shape));
+}
 
 void LottieDeviceContext::DrawText(
     const std::string &text, const std::u32string &wtext, int x, int y, int width, int height)

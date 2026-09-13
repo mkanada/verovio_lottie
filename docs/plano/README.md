@@ -196,9 +196,9 @@ Decisões **já tomadas** (não reabrir): ver "Decisões arquiteturais já tomad
 | [A03](A03-serializador-lottie-json.md) | Serializador `LottieWriter` | A02 | — | concluído |
 | [A04](A04-toolkit-e-cli-lottie-json.md) | `Toolkit::RenderToLottie` + CLI `lottie` | A03 | D-CLI | concluído |
 | [A05](A05-script-de-comparacao.md) | Script de comparação por página + fontes no `compare` | A04 | — | concluído |
-| [A06](A06-primitivas-retas-e-cores.md) | Linhas, polígonos, retângulos, elipses e cores | A05 | — | pendente |
-| [A07](A07-curvas-bezier.md) | Curvas Bézier (ligaduras, beams curvos) | A06 | — | pendente |
-| [A08](A08-parser-de-path-dos-glifos.md) | Parser de path SVG dos glifos | A02 | — | pendente |
+| [A06](A06-primitivas-retas-e-cores.md) | Linhas, polígonos, retângulos, elipses e cores | A05 | — | concluído |
+| [A07](A07-curvas-bezier.md) | Curvas Bézier (ligaduras, beams curvos) | A06 | — | concluído |
+| [A08](A08-parser-de-path-dos-glifos.md) | Parser de path SVG dos glifos | A02 | — | concluído |
 | [A09](A09-draw-music-text.md) | `DrawMusicText` (glifos SMuFL) | A06, A08 | — | pendente |
 | [A10](A10-texto-smufl.md) | Texto: fontes SMuFL via glifos; texto comum contabilizado | A09 | — | pendente |
 | [A11](A11-zip-writer.md) | `ZipFileWriter` | A01 | — | pendente |

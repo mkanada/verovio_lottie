@@ -13,7 +13,13 @@
 #include <cctype>
 #include <cmath>
 #include <iomanip>
+#include <map>
+#include <set>
 #include <sstream>
+
+//----------------------------------------------------------------------------
+
+#include "vrv.h"
 
 //----------------------------------------------------------------------------
 
@@ -58,7 +64,6 @@ static std::string EscapeJsonString(const std::string &s)
     return out;
 }
 
-// Only "#RRGGBB" and "#RGB" are supported at this stage (a full CSS color parser is A06).
 static bool ParseHexColor(const std::string &css, int &outColor)
 {
     auto isHex = [](char c) { return static_cast<bool>(std::isxdigit(static_cast<unsigned char>(c))); };
@@ -97,16 +102,104 @@ static void ColorIntToRgb01(int color, double &r, double &g, double &b)
     b = (color & 0xFF) / 255.0;
 }
 
+// rgb(r,g,b), integer components 0-255 (out-of-range values are clamped, as CSS requires).
+static bool ParseRgbFunction(const std::string &lowerCss, int &outColor)
+{
+    if ((lowerCss.compare(0, 4, "rgb(") != 0) || (lowerCss.back() != ')')) {
+        return false;
+    }
+
+    const std::string inner = lowerCss.substr(4, lowerCss.size() - 5);
+    std::vector<int> components;
+    std::stringstream ss(inner);
+    std::string token;
+    while (std::getline(ss, token, ',')) {
+        try {
+            std::size_t consumed = 0;
+            components.push_back(std::stoi(token, &consumed));
+        }
+        catch (const std::exception &) {
+            return false;
+        }
+    }
+    if (components.size() != 3) {
+        return false;
+    }
+
+    auto clamp = [](int v) { return std::max(0, std::min(255, v)); };
+    outColor = (clamp(components[0]) << 16) | (clamp(components[1]) << 8) | clamp(components[2]);
+    return true;
+}
+
+// A practical subset of the CSS named colors, not the full CSS spec list.
+static bool ParseNamedColor(const std::string &lowerCss, int &outColor)
+{
+    static const std::map<std::string, int> namedColors = {
+        { "black", 0x000000 },
+        { "white", 0xFFFFFF },
+        { "red", 0xFF0000 },
+        { "green", 0x008000 },
+        { "blue", 0x0000FF },
+        { "gray", 0x808080 },
+        { "grey", 0x808080 },
+        { "silver", 0xC0C0C0 },
+        { "maroon", 0x800000 },
+        { "purple", 0x800080 },
+        { "fuchsia", 0xFF00FF },
+        { "lime", 0x00FF00 },
+        { "olive", 0x808000 },
+        { "yellow", 0xFFFF00 },
+        { "navy", 0x000080 },
+        { "teal", 0x008080 },
+        { "aqua", 0x00FFFF },
+        { "orange", 0xFFA500 },
+    };
+
+    const auto it = namedColors.find(lowerCss);
+    if (it == namedColors.end()) {
+        return false;
+    }
+    outColor = it->second;
+    return true;
+}
+
+// Resolves an inline @color value (from LottieNode::colorCss) into a packed 24-bit color.
+// Supports "#RGB", "#RRGGBB", "rgb(r,g,b)" and a subset of CSS named colors. An unparseable,
+// non-empty value is logged once and defaults to black, matching the SVG behavior of falling
+// back to the initial "black" fill/stroke rather than silently inheriting.
 static int ResolveColor(const std::string &colorCss, int inheritedColor)
 {
     if (colorCss.empty()) {
         return inheritedColor;
     }
+
+    const std::size_t begin = colorCss.find_first_not_of(" \t\r\n");
+    if (begin == std::string::npos) {
+        return inheritedColor;
+    }
+    const std::size_t end = colorCss.find_last_not_of(" \t\r\n");
+    const std::string trimmed = colorCss.substr(begin, end - begin + 1);
+
     int parsed = COLOR_NONE;
-    if (ParseHexColor(colorCss, parsed)) {
+    if (ParseHexColor(trimmed, parsed)) {
         return parsed;
     }
-    return inheritedColor;
+
+    std::string lower = trimmed;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
+
+    if (ParseRgbFunction(lower, parsed)) {
+        return parsed;
+    }
+    if (ParseNamedColor(lower, parsed)) {
+        return parsed;
+    }
+
+    static std::set<std::string> warnedColors;
+    if (warnedColors.insert(trimmed).second) {
+        LogWarning("LottieWriter: unsupported CSS color value '%s'; defaulting to black.", trimmed.c_str());
+    }
+    return COLOR_BLACK;
 }
 
 static int MapLineCap(LineCapStyle cap)

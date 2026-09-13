@@ -70,4 +70,41 @@ Béziers (A07), glifos (A09), texto (A10).
 
 ## Notas de execução
 
-_(preencher ao executar)_
+- Implementado em `lottiedevicecontext.cpp` com um pequeno namespace anônimo de
+  helpers (`ToVec`, `MakeStraightBezier`, `ApplyStrokeFromPen`,
+  `ApplyDashFromPen`, `ApplyFillFromBrush`) — evita repetir a lógica de
+  contorno/preenchimento em cada `DrawX`, mas cada `DrawX` continua
+  espelhando 1:1 a primitiva SVG correspondente.
+- `DrawRoundedRectangle`: o centro do `Rect` é calculado com divisão real
+  (`x + width / 2.0`), não inteira — diferente do `DrawEllipse`, onde a
+  divisão inteira é proposital (reproduz o mesmo truncamento de
+  `SvgDeviceContext::DrawEllipse`, que declara `rw`/`rh` como `int`). O
+  `<rect>` do SVG não faz nenhum truncamento (usa x/y/width/height direto),
+  então converter para o formato centro+tamanho do Lottie com divisão
+  inteira introduziria um desvio de meio pixel que não existe no SVG.
+- Dash só é copiado para `DrawLine`, `DrawPolyline` e `DrawPolygon` — como no
+  SVG, `DrawRoundedRectangle`/`DrawEllipse` nunca chamam
+  `AppendStrokeDashArray`.
+- Parser de cor CSS em `lottiewriter.cpp` (`ResolveColor`): hex (`#RGB`,
+  `#RRGGBB`), `rgb(r,g,b)` (com clamp 0-255) e os nomes da lista do plano.
+  Valor não reconhecido → `LogWarning` (uma vez por valor, via
+  `std::set` estático) e cai para preto, em vez de herdar — evita mascarar
+  erros de encoding silenciosamente.
+- Critérios de aceite verificados com
+  `compare/scripts/compare-page.sh` no Grieg (3,74% de diff) e no Joplin
+  (4,16% de diff): em ambos os PNGs do Lottie aparecem pautas, hastes,
+  barras, linhas suplementares e beams; o vermelho restante no diff se
+  concentra em glifos (noteheads, claves, acidentes, articulações), texto
+  (título, dinâmicas, tempo) e curvas (ligaduras/ties) — tudo fora do escopo
+  desta etapa (A07-A10).
+- Teste de cor (opcional): ao reproduzi-lo, cuidado para não editar o
+  `<incip>` dentro do `meiHead` (um "score" de exemplo usado só como preview
+  de metadados) em vez da música de verdade em `<music><body>` — os dois têm
+  a mesma estrutura de `<measure>`/`<beam>`/`<note>`, e uma nota colorida
+  ali não é renderizada nem gera diferença nenhuma (não é um bug do
+  exportador). Testado colorindo a primeira nota real
+  (`xml:id="d418889e30"`) do Grieg: a haste (`DrawLine`) sai vermelha em
+  ambos os PNGs; a cabeça da nota é um glifo (fora de escopo, A09) e por
+  isso só aparece vermelha no SVG.
+- Ordem contorno-sobre-preenchimento (`st` antes de `fl` em `it`) já estava
+  correta desde A03; não foi necessário inverter nada.

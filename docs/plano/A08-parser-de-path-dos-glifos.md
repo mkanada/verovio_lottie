@@ -65,4 +65,49 @@ Uso no `DrawMusicText` (A09).
 
 ## Notas de execução
 
-_(preencher ao executar)_
+- Criados `svgpathparser.h`/`.cpp` conforme a API sugerida. `ParseSvgPathData`
+  usa uma classe local `PathBuilder` (namespace anônimo) que percorre a string
+  uma vez, com um tokenizador de números próprio (`ReadNumber`) que não exige
+  separador entre números — cobre `-54 0 -97`, `10-5` e `.5.5`.
+- Reflexão de `S`/`s` e `T`/`t`: implementada guardando o tipo do último
+  comando (`Cubic`/`Quad`/`None`) e o ponto de controle correspondente,
+  resetados no topo de cada comando e sobrescritos só em `C/S` (Cubic) e
+  `Q/T` (Quad) — assim qualquer outro comando no meio (inclusive `M`) quebra a
+  cadeia de reflexão, como no SVG real.
+- `A`/`a`: `LogWarning` e ignora o segmento **sem mover o ponto corrente**
+  (interpretação literal de "ignorar o segmento" — não ocorre nos dados reais
+  do Verovio, só listado por robustez a fontes customizadas).
+- Guarda anti-loop-infinito: um número solto logo após `Z`/`z` (que não tem
+  parâmetros) é tratado como dado malformado (`LogWarning` + `return false`)
+  em vez de tentar repetir `Z` indefinidamente.
+- `ParseGlyphXml` usa `pugi::xml_document::load_buffer` + travessia manual
+  recursiva (`CollectPathNodes`), no mesmo estilo de `resources.cpp` (sem
+  XPath). `ParseScaleTransform` aceita `scale(sx,sy)` (formato real dos dados)
+  e também `scale(s)` por robustez; qualquer outro `transform` gera
+  `LogWarning` e usa escala identidade (mantém o path em vez de descartá-lo).
+- **Discrepância nos valores "Esperado" deste documento**: a verificação
+  manual (`ParseGlyphXml` sobre `data/Leipzig/E0A4.xml`, código temporário em
+  `tools/main.cpp` atrás de `--debug-svgpath`, removido depois de conferir)
+  deu:
+  - 1 subpath, `closed = true`, 4 vértices — bate com o esperado;
+  - vértices: `(0, 39)`, `(200, −133)`, `(314, −38)`, `(96, 133)`;
+  - tangentes: `i[0] = (0, 64)`, `o[0] = (0, −68)`, `i[1] = (−127, 0)`,
+    `o[1] = (66, 0)`, `i[2] = (0, −58)`, `o[2] = (0, 84)`, `i[3] = (112, 0)`,
+    `o[3] = (−64, 0)`.
+  - Isso **difere** dos valores numéricos listados acima em "Critérios de
+    aceite" (`(97, 125)`, `(0, 42)`, `(198, −125)`, `(295, −42)`,
+    `o[0] = (−54, 0)`, `i[0] = (89, 0)`, `i[1] = (0, 52)`). Recalculei à mão a
+    partir do `d` real do arquivo (`M0 -39c0 68 73 172 200 172c66 0 114 -37
+    114 -95c0 -84 -106 -171 -218 -171c-64 0 -96 30 -96 94z`) seguindo a
+    semântica padrão do SVG (`c` relativo: os três pares de coordenadas são
+    todos relativos ao ponto **antes** do segmento, não encadeados entre si) e
+    conferi de forma independente com um script Python; os dois métodos batem
+    exatamente com a saída do parser acima. A contagem de subpaths/vértices e
+    a estrutura (fechado, 4 vértices, união do último com o primeiro) batem
+    com o esperado — só os números concretos do exemplo do plano parecem ter
+    sido calculados à mão de forma aproximada/incorreta ao escrever o passo.
+    Não ajustei o parser para "bater" com esses números por não haver
+    fundamento para eles; a validação de verdade (critério visual do
+    `CLAUDE.md`) fica para A09, quando o glifo entra no `DrawMusicText` e
+    passa pelo diff de PNG.
+- Build limpo (`cmake ../cmake && make -j4`, sem warnings novos).
