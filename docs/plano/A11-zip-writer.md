@@ -45,4 +45,17 @@ Manifest e conteúdo do `.lottie` (A12).
 
 ## Notas de execução
 
-_(preencher ao executar)_
+- `ZipFileWriter` declarada em `filereader.h` logo após `ZipFileReader`,
+  reaproveitando a mesma forward declaration de `miniz_cpp::zip_file`.
+  Implementação em `filereader.cpp`, único lugar que inclui `zip_file.hpp`.
+- Construtor cria `m_file` diretamente com `new miniz_cpp::zip_file()`
+  (construtor vazio da lib, sem `Reset()` — diferente do reader, que carrega
+  de bytes/arquivo existente).
+- `AddFile` chama `writestr(archivePath, content)` sem tratar exceção
+  (conforme o plano — só `Save`/`GetBytes` capturam).
+- `Save`/`GetBytes` envolvem a chamada em `try/catch (const std::exception &)`,
+  com `LogError` e retorno `false`/`{}`. Note que
+  `zip_file::save(std::vector<unsigned char> &)` recebe o vetor por
+  referência e o preenche (não retorna um novo vetor).
+- Build verificado com `cd verovio/tools && make -j4` (build já existente,
+  gerado por passo anterior) — compilou e linkou sem erros.

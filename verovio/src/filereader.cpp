@@ -123,4 +123,48 @@ std::string ZipFileReader::ReadTextFile(const std::string &filename)
     return "";
 }
 
+//----------------------------------------------------------------------------
+// ZipFileWriter
+//----------------------------------------------------------------------------
+
+ZipFileWriter::ZipFileWriter()
+{
+    m_file = new miniz_cpp::zip_file();
+}
+
+ZipFileWriter::~ZipFileWriter()
+{
+    delete m_file;
+}
+
+void ZipFileWriter::AddFile(const std::string &archivePath, const std::string &content)
+{
+    m_file->writestr(archivePath, content);
+}
+
+bool ZipFileWriter::Save(const std::string &filename)
+{
+    try {
+        m_file->save(filename);
+    }
+    catch (const std::exception &e) {
+        LogError("Could not save zip archive '%s': %s", filename.c_str(), e.what());
+        return false;
+    }
+    return true;
+}
+
+std::vector<unsigned char> ZipFileWriter::GetBytes()
+{
+    std::vector<unsigned char> bytes;
+    try {
+        m_file->save(bytes);
+    }
+    catch (const std::exception &e) {
+        LogError("Could not serialize zip archive: %s", e.what());
+        return {};
+    }
+    return bytes;
+}
+
 } // namespace vrv

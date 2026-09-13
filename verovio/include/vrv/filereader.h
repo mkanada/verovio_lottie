@@ -81,6 +81,50 @@ private:
 
 }; // class ZipFileReader
 
+//----------------------------------------------------------------------------
+// ZipFileWriter
+//----------------------------------------------------------------------------
+
+/**
+ * This class is a writer for zip archives.
+ */
+class ZipFileWriter {
+public:
+    /**
+     * @name Constructors, destructors, and other standard methods
+     */
+    ///@{
+    ZipFileWriter();
+    ~ZipFileWriter();
+    ///@}
+
+    /**
+     * Add a file with the given content to the archive.
+     */
+    void AddFile(const std::string &archivePath, const std::string &content);
+
+    /**
+     * Save the archive to a file.
+     * Return false (and log an error) if the archive could not be saved.
+     */
+    bool Save(const std::string &filename);
+
+    /**
+     * Return the archive as a vector of bytes.
+     * Return an empty vector (and log an error) if the archive could not be serialized.
+     */
+    std::vector<unsigned char> GetBytes();
+
+private:
+    //
+public:
+    //
+private:
+    /** A pointer to the miniz zip file */
+    miniz_cpp::zip_file *m_file;
+
+}; // class ZipFileWriter
+
 } // namespace vrv
 
 #endif // __VRV_FILEREADER_H__
