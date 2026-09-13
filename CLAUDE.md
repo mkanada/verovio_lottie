@@ -62,15 +62,61 @@ Trate estas decisões como fixas — não as reabra sem confirmar com o usuário
 - **MVP do destaque de nota é mudança de cor com fade** de volta ao preto.
   Cursor/bounding boxes seguindo notas é explicitamente **fora de escopo**
   por enquanto — não implemente isso preventivamente.
+- **Mecanismo de destaque e de virada de página (decidido em B02, ver
+  `docs/plano/decisoes/B02-mecanismo-destaque.md` — a decisão passou por
+  uma correção do usuário na própria sessão; o texto abaixo é a versão
+  final):**
+  - Destaque de nota usa **dois mecanismos diferentes por modo de uso,
+    mutuamente exclusivos** (nunca os dois controlando a mesma nota ao
+    mesmo tempo):
+    - **Modo automático (playback):** state machine em estrela (padrão já
+      validado: `PlaybackState`+`segment`+`GlobalState`), com notas do
+      **mesmo instante do timemap** agrupadas num único estado/segmento,
+      endereçável por qualquer `xml:id` do grupo. Fade com curva autorada
+      no Lottie. Limitação aceita: vozes com onsets *diferentes* que se
+      sobrepõem no tempo ainda se cancelam entre si.
+    - **Modo interativo (aluno tocando ao vivo):** um slot de cor
+      (`set_color_slot`) por nota, nomeado pelo `xml:id`, sem pool nem
+      limite de quantas notas podem estar acesas ao mesmo tempo. Fade
+      **não** precisa ser autorado no Lottie nesse modo — o host liga/
+      desliga a cor diretamente (requisito relaxado conscientemente só
+      para este modo, por não haver como testar slots animados sem
+      reintroduzir a dependência de playhead único).
+    - Trocar de modo exige um protocolo de handoff (resetar a state
+      machine do automático / limpar os slots do interativo) — **ainda
+      não desenhado**, é escopo de C01/C03.
+  - Virada de página usa um **engine totalmente separado** do mecanismo de
+    destaque automático (nunca a mesma state machine/instância — B01
+    provou que dividir engine faz a virada cancelar um fade em
+    andamento). Mecanismo: **dois eventos discretos por fronteira de
+    página**, cada um endereçável diretamente (mesma topologia em estrela
+    das notas) — (A) playhead entra no último compasso da página atual →
+    dispara animação pré-autorada de "espreitar" (revelação parcial da
+    próxima página, para no frame final); (B) playhead entra no primeiro
+    compasso da próxima página → dispara animação pré-autorada que
+    cobre/remove o que restava da página anterior, completando a
+    transição. Ambas são segmentos comuns (`PlaybackState`+`segment`), sem
+    precisar da semântica de `Tweened`.
+  - Risco aberto, aceito conscientemente sem spike dedicado (decisão do
+    usuário): não está confirmado se o(s) runtime(s) de player que o
+    zywny vai usar suportam rodar **2 instâncias simultâneas** (o engine
+    principal `score`, que já serve pro modo automático e pro interativo
+    via slots, + o engine separado de página) e compositar a posição de
+    câmera de uma na renderização visível da outra — primeiro ponto de
+    atenção prático ao implementar C00.
 
 ## O que ainda está em aberto (não decida sozinho, pesquise/pergunte)
 
 Ver seção "Questões técnicas em aberto" em
 `docs/descricao-do-projeto.md`. Resumo:
 
-- Desenho detalhado do grafo da State Machine (estados/inputs/listeners).
-- Disposição dos layers de página dentro da composição única (ex.: trilha
-  horizontal) e como o host recorta o viewport visível.
+- Grafo *detalhado* da State Machine (nomes exatos de estados/inputs/
+  listeners) — o mecanismo já foi decidido em B02 (ver acima), falta só a
+  autoria concreta, prevista para C01.
+- Curva/timing exatos da animação de "espreitar" e de "cobrir" na virada
+  de página, e como as coordenadas do overlay de destaque acompanham a
+  página/câmera corrente — a topologia já foi decidida em B02, falta a
+  autoria concreta (Fase C).
 - Nome da flag de CLI e estrutura de arquivos do novo formato de exportação.
 
 ## Notas operacionais

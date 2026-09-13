@@ -1,11 +1,16 @@
 # C00 — Fase C (animações): esboço a detalhar
 
-**Status:** bloqueado até D-DESTAQUE e D-LAYOUT-PAGINAS (memorando B02).
+**Status:** D-DESTAQUE e D-LAYOUT-PAGINAS decididos em B02 — ver
+`docs/plano/decisoes/B02-mecanismo-destaque.md`. Pronto para ser reescrito
+em passos executáveis.
 
-Este arquivo **não** é executável como está. Depois da decisão do usuário, o
-primeiro trabalho da fase C é reescrever este esboço em arquivos `C01…Cn` no
-mesmo formato dos passos A (ler antes / arquivos / o que fazer / fora de escopo /
-critérios de aceite) e atualizar a tabela do README do plano.
+Este arquivo **não** é executável como está. O primeiro trabalho da fase C
+é reescrever este esboço em arquivos `C01…Cn` no mesmo formato dos passos A
+(ler antes / arquivos / o que fazer / fora de escopo / critérios de aceite),
+já incorporando o mecanismo decidido em B02 (M2 no modo automático + M3 no
+modo interativo, mutuamente exclusivos, pro destaque; engine separado com
+dois eventos por fronteira pra página), e atualizar a tabela do README do
+plano.
 
 ## Esboço provisório (ajustar ao mecanismo escolhido)
 

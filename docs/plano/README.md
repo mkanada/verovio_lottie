@@ -163,8 +163,8 @@ usuário ao chegar neles.
 | --- | --- | --- | --- |
 | D-CLI | ~~Nomes dos formatos de saída na CLI~~ — **decidido em A04**: `lottie` (JSON cru de uma página, para depuração) e `dotlottie` (pacote final da música) | ~~A04~~, A12 | `lottie` (JSON cru de uma página, para depuração) e `dotlottie` (pacote final da música) |
 | D-TEXTO | Como renderizar texto comum (títulos, andamento, dedilhados, letra) | D01 | Decidir após o memorando B03 |
-| D-DESTAQUE | Mecanismo para destacar notas simultâneas (acordes, duas mãos) com fade controlado pelo Lottie | Fase C | Decidir após o memorando B02 |
-| D-LAYOUT-PAGINAS | Disposição das páginas na composição e animação de virada | C (virada de página) | Decidir junto com D-DESTAQUE |
+| D-DESTAQUE | ~~Mecanismo para destacar notas simultâneas (acordes, duas mãos) com fade controlado pelo Lottie~~ — **decidido em B02**: dois mecanismos por modo de uso, mutuamente exclusivos — M2 (agrupamento por instante do timemap, fade autorado) no modo automático; M3 (slot de cor por nota, sem limite, fade não autorado) no modo interativo. Ver `docs/plano/decisoes/B02-mecanismo-destaque.md`. | ~~Fase C~~ C01 | M2 (auto) + M3 (interativo) |
+| D-LAYOUT-PAGINAS | ~~Disposição das páginas na composição e animação de virada~~ — **decidido em B02**: trilha horizontal + engine separado do destaque, virada em dois eventos discretos (entrar no último compasso da página atual → "espreitar"; entrar no primeiro compasso da próxima → "cobrir"). Ver `docs/plano/decisoes/B02-mecanismo-destaque.md`. | ~~C (virada de página)~~ C04 | trilha horizontal, dois eventos por fronteira |
 
 Decisões **já tomadas** (não reabrir): ver "Decisões arquiteturais já tomadas" no
 `CLAUDE.md`.
@@ -174,8 +174,20 @@ Decisões **já tomadas** (não reabrir): ver "Decisões arquiteturais já tomad
 1. **Concorrência de destaques** — uma animação Lottie tem um único playhead.
    Acordes e as duas mãos do piano exigem várias notas destacadas ao mesmo tempo,
    com fades que se sobrepõem. Isso pode conflitar com "um segmento por nota".
-   Os passos B01/B02 existem para resolver isso antes de qualquer código de
-   animação.
+   **Confirmado empiricamente pelo B01** (E3/E6 e o teste extra de virada de
+   página em `docs/plano/spikes/B01-resultado.md`): `PlaybackState`+`segment`
+   só permite uma nota destacada por vez (um único `current_state`), e uma
+   virada de página no mesmo engine cancela um destaque em andamento; slots
+   de cor (E6) acendem várias notas ao mesmo tempo mas sem fade automático
+   comprovado. **Decidido em B02** (`docs/plano/decisoes/B02-mecanismo-destaque.md`):
+   dois mecanismos por modo de uso, mutuamente exclusivos — agrupamento por
+   instante do timemap (M2, fade autorado) no modo automático; slot de cor
+   por nota sem limite (M3, fade não autorado) no modo interativo; engine
+   totalmente separado (dois eventos por fronteira de página) pra virada.
+   Risco residual aceito sem spike dedicado: não está confirmado se os
+   runtimes de player do zywny suportam rodar as 2 instâncias simultâneas
+   (engine principal + engine de página) e compositar entre elas — atenção
+   no início de C00/C01.
 2. **Texto sem contornos** — ver D-TEXTO.
 3. **Tamanho do arquivo** — a fase A "assa" as coordenadas de cada glifo em cada
    uso (não há `<use>` em Lottie). Otimização fica para a fase D, se o relatório
@@ -204,10 +216,10 @@ Decisões **já tomadas** (não reabrir): ver "Decisões arquiteturais já tomad
 | [A11](A11-zip-writer.md) | `ZipFileWriter` | A01 | — | concluído |
 | [A12](A12-pacote-dotlottie-multipagina.md) | Pacote `.lottie` com todas as páginas + CLI `dotlottie` | A10, A11 | D-CLI | concluído |
 | [A13](A13-varredura-do-corpus.md) | Varredura do corpus e relatório de paridade | A12 | — | concluído |
-| [B01](B01-spike-state-machine.md) | Spike: state machine com eventos por `xml:id` | A05 | — | pendente |
-| [B02](B02-memorando-mecanismo-de-destaque.md) | Memorando: mecanismo de destaque e virada | B01 | produz D-DESTAQUE | pendente |
+| [B01](B01-spike-state-machine.md) | Spike: state machine com eventos por `xml:id` | A05 | — | concluído |
+| [B02](B02-memorando-mecanismo-de-destaque.md) | Memorando: mecanismo de destaque e virada | B01 | produziu D-DESTAQUE e D-LAYOUT-PAGINAS | concluído |
 | [B03](B03-memorando-texto.md) | Memorando: texto comum | A13 | produz D-TEXTO | pendente |
-| [C00](C00-fase-c-esboco.md) | Fase C (animações) — esboço a detalhar | B02, A13 | D-DESTAQUE, D-LAYOUT-PAGINAS | bloqueado |
+| [C00](C00-fase-c-esboco.md) | Fase C (animações) — esboço a detalhar, reescrever em C01…Cn | B02, A13 | — (D-DESTAQUE e D-LAYOUT-PAGINAS já decididos) | pendente |
 | [D00](D00-fase-d-esboco.md) | Fase D (paridade completa) — esboço a detalhar | A13, B03 | D-TEXTO | bloqueado |
 | [E00](E00-bindings-opcional.md) | Bindings JS/Python (opcional) | A12 | — | opcional |
 
