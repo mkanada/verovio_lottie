@@ -281,11 +281,13 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    const std::vector<std::string> outformats = { "mei", "mei-basic", "mei-pb", "mei-facs", "svg", "lottie",
-        "dotlottie", "midi", "timemap", "expansionmap", "humdrum", "hum", "pae", "mei-pb-serialized" };
+    const std::vector<std::string> outformats
+        = { "mei", "mei-basic", "mei-pb", "mei-facs", "svg", "lottie", "dotlottie", "dotlottie-highlight", "midi",
+              "timemap", "expansionmap", "humdrum", "hum", "pae", "mei-pb-serialized" };
     if (std::find(outformats.begin(), outformats.end(), outformat) == outformats.end()) {
         std::cerr << "Output format (" << outformat
-                  << ") can only be 'mei', 'mei-basic', 'mei-pb', mei-facs', 'svg', 'lottie', 'dotlottie', 'midi', "
+                  << ") can only be 'mei', 'mei-basic', 'mei-pb', mei-facs', 'svg', 'lottie', 'dotlottie', "
+                     "'dotlottie-highlight', 'midi', "
                      "'timemap', 'expansionmap', 'humdrum', 'hum', 'pae', or , 'mei-pb-serialized'."
                   << std::endl;
         exit(1);
@@ -405,6 +407,30 @@ int main(int argc, char **argv)
         }
         else {
             std::cerr << "Output written to " << outfile << "." << std::endl;
+        }
+    }
+
+    else if (outformat == "dotlottie-highlight") {
+        const int from = page ? *page : 1;
+        const int to = allPages ? toolkit.GetPageCount() : from;
+
+        for (int p = from; p <= to; ++p) {
+            std::string curOutfile = outfile;
+            if (from < to) {
+                curOutfile += vrv::StringFormat("_%03d", p);
+            }
+            curOutfile += ".lottie";
+            if (stdOutput) {
+                std::cerr << "dotLottie is a binary package and cannot be written to standard output." << std::endl;
+                exit(1);
+            }
+            else if (!toolkit.RenderToDotLottieHighlightFile(curOutfile, p)) {
+                std::cerr << "Unable to write dotLottie to " << curOutfile << "." << std::endl;
+                exit(1);
+            }
+            else {
+                std::cerr << "Output written to " << curOutfile << "." << std::endl;
+            }
         }
     }
 

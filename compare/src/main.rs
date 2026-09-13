@@ -82,7 +82,10 @@ enum Command {
         width: u32,
         #[arg(long)]
         height: u32,
-        /// Roteiro "ms:fire nome;ms:fire nome;...". Vazio = nenhum evento disparado.
+        /// Roteiro "ms:ação;ms:ação;...". Ações: "fire nome" (state machine),
+        /// "slot id:r,g,b" (Player::set_color_slot, 0-1 cada), "clearslot id"
+        /// e "clearslots" (ver docs/plano/C03-slots-interativos.md sobre o
+        /// handoff M2/M3). Vazio = nenhuma ação.
         #[arg(long, default_value = "")]
         script: String,
         /// Lista de instantes (ms) em que salvar um PNG, separados por vírgula.
@@ -193,27 +196,27 @@ fn svg_to_png(input: &Path, output: &Path, fonts: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
+/// Um único "id:r,g,b" (0-1 cada) de `--slot`/da ação `slot` do roteiro de `sm-render`.
+fn parse_color_slot(s: &str) -> Result<(String, [f32; 3])> {
+    let (id, rgb) = s
+        .split_once(':')
+        .with_context(|| format!("slot mal formado (esperado id:r,g,b): {s:?}"))?;
+    let parts: Vec<&str> = rgb.split(',').map(str::trim).collect();
+    let [r, g, b] = parts.as_slice() else {
+        bail!("slot precisa de 3 componentes r,g,b (0-1): {s:?}");
+    };
+    Ok((
+        id.trim().to_string(),
+        [
+            r.parse().with_context(|| format!("componente r inválido em {s:?}"))?,
+            g.parse().with_context(|| format!("componente g inválido em {s:?}"))?,
+            b.parse().with_context(|| format!("componente b inválido em {s:?}"))?,
+        ],
+    ))
+}
+
 fn parse_color_slots(slots: &[String]) -> Result<Vec<(String, [f32; 3])>> {
-    slots
-        .iter()
-        .map(|s| {
-            let (id, rgb) = s
-                .split_once(':')
-                .with_context(|| format!("--slot mal formado (esperado id:r,g,b): {s:?}"))?;
-            let parts: Vec<&str> = rgb.split(',').map(str::trim).collect();
-            let [r, g, b] = parts.as_slice() else {
-                bail!("--slot precisa de 3 componentes r,g,b (0-1): {s:?}");
-            };
-            Ok((
-                id.trim().to_string(),
-                [
-                    r.parse().with_context(|| format!("componente r inválido em {s:?}"))?,
-                    g.parse().with_context(|| format!("componente g inválido em {s:?}"))?,
-                    b.parse().with_context(|| format!("componente b inválido em {s:?}"))?,
-                ],
-            ))
-        })
-        .collect()
+    slots.iter().map(|s| parse_color_slot(s)).collect()
 }
 
 fn lottie_to_png(
@@ -324,10 +327,20 @@ fn lottie_to_png(
     Ok(())
 }
 
-/// Um `ms:fire nome` do roteiro de `sm-render`.
+/// Uma ação do roteiro de `sm-render`, no instante `ms`. Ver `docs/plano/C03-slots-interativos.md`
+/// para o motivo de `Slot`/`ClearSlot`/`ClearSlots` existirem: testar o handoff M2 (state
+/// machine, `Fire`) ↔ M3 (slot de cor, `Player::set_color_slot`/`clear_slot(s)`) num único
+/// roteiro, sem precisar de dois processos.
+enum ScriptOp {
+    Fire(String),
+    Slot(String, [f32; 3]),
+    ClearSlot(String),
+    ClearSlots,
+}
+
 struct ScriptAction {
     ms: u32,
-    event: String,
+    op: ScriptOp,
 }
 
 fn parse_script(script: &str) -> Result<Vec<ScriptAction>> {
@@ -344,13 +357,22 @@ fn parse_script(script: &str) -> Result<Vec<ScriptAction>> {
             .trim()
             .parse()
             .with_context(|| format!("instante inválido: {:?}", ms_str.trim()))?;
-        let event = rest
-            .trim()
-            .strip_prefix("fire ")
-            .with_context(|| format!("ação não suportada (só \"fire <nome>\"): {:?}", rest.trim()))?
-            .trim()
-            .to_string();
-        actions.push(ScriptAction { ms, event });
+        let rest = rest.trim();
+        let op = if let Some(name) = rest.strip_prefix("fire ") {
+            ScriptOp::Fire(name.trim().to_string())
+        } else if let Some(spec) = rest.strip_prefix("slot ") {
+            let (id, rgb) = parse_color_slot(spec.trim())?;
+            ScriptOp::Slot(id, rgb)
+        } else if let Some(id) = rest.strip_prefix("clearslot ") {
+            ScriptOp::ClearSlot(id.trim().to_string())
+        } else if rest == "clearslots" {
+            ScriptOp::ClearSlots
+        } else {
+            bail!(
+                "ação não suportada (esperado \"fire <nome>\", \"slot <id:r,g,b>\", \"clearslot <id>\" ou \"clearslots\"): {rest:?}"
+            );
+        };
+        actions.push(ScriptAction { ms, op });
     }
     Ok(actions)
 }
@@ -518,11 +540,29 @@ fn sm_render(
         // Roteiro é "ms:ação" — as ações marcadas para o instante `t` (inclusive
         // t=0, ex.: E1) rodam antes do snapshot desse instante.
         for action in actions.iter().filter(|a| a.ms == t) {
-            if let Err(e) = engine.fire(&action.event, true) {
-                eprintln!(
-                    "aviso: fire({:?}) falhou em t={t}ms ({e:?}) — nome não declarado como Event input?",
-                    action.event
-                );
+            match &action.op {
+                ScriptOp::Fire(event) => {
+                    if let Err(e) = engine.fire(event, true) {
+                        eprintln!(
+                            "aviso: fire({event:?}) falhou em t={t}ms ({e:?}) — nome não declarado como Event input?"
+                        );
+                    }
+                }
+                ScriptOp::Slot(id, rgb) => {
+                    if let Err(e) = engine.player.set_color_slot(id, dotlottie_rs::ColorSlot::new(*rgb)) {
+                        eprintln!("aviso: slot({id:?}) falhou em t={t}ms ({e:?})");
+                    }
+                }
+                ScriptOp::ClearSlot(id) => {
+                    if let Err(e) = engine.player.clear_slot(id) {
+                        eprintln!("aviso: clearslot({id:?}) falhou em t={t}ms ({e:?})");
+                    }
+                }
+                ScriptOp::ClearSlots => {
+                    if let Err(e) = engine.player.clear_slots() {
+                        eprintln!("aviso: clearslots falhou em t={t}ms ({e:?})");
+                    }
+                }
             }
         }
         // fire() não renderiza sozinho: força o flush do frame/estado atual pro buffer

@@ -68,6 +68,13 @@ public:
     TimemapEntry &GetEntry(const Fraction &time) { return m_map[time]; }
 
     /**
+     * Read-only access to the underlying map, ordered by time. Used by consumers that need
+     * the grouping of ids by exact onset instant (e.g. LottieHighlightBuilder's M2 grouping)
+     * instead of the flattened JSON produced by ToJson().
+     */
+    const std::map<Fraction, TimemapEntry> &GetMap() const { return m_map; }
+
+    /**
      * Write the current timemap to a JSON string
      */
     void ToJson(std::string &output, bool includeRests, bool includeMeasures, bool useFractions);

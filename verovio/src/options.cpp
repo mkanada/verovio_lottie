@@ -2025,6 +2025,9 @@ bool Options::SetOutputTo(std::string const &outputTo)
     else if (outputTo == "dotlottie") {
         m_outputToFormat = DOTLOTTIE;
     }
+    else if (outputTo == "dotlottie-highlight") {
+        m_outputToFormat = DOTLOTTIE_HIGHLIGHT;
+    }
     else if (outputTo != "svg") {
         LogError("Output format '%s' is not supported", outputTo.c_str());
         return false;

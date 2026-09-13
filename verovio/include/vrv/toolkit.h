@@ -412,6 +412,21 @@ public:
     bool RenderToDotLottieFile(const std::string &filename);
 
     /**
+     * Render a single page as a dotLottie (.lottie) package with a working note-highlight
+     * state machine (M2, see docs/plano/C02-notas-animadas.md): firing the xml:id of any
+     * note (or, for a chord/simultaneous notes, any member of the same timemap instant)
+     * flashes it to a highlight color and fades it back. One page at a time only - the
+     * whole-score/multi-page case is C04's (see that step's "Decisão de escopo").
+     *
+     * @remark nojs
+     *
+     * @param filename The output filename
+     * @param pageNo The page to render (1-based)
+     * @return True if the file was successfully written
+     */
+    bool RenderToDotLottieHighlightFile(const std::string &filename, int pageNo = 1);
+
+    /**
      * Render the document to MIDI.
      *
      * @return A MIDI file as a base64 encoded string

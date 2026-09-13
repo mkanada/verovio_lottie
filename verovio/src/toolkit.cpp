@@ -12,6 +12,7 @@
 #include <cassert>
 #include <locale>
 #include <regex>
+#include <unordered_set>
 
 //----------------------------------------------------------------------------
 
@@ -33,6 +34,7 @@
 #include "iovolpiano.h"
 #include "layer.h"
 #include "lottiedevicecontext.h"
+#include "lottiehighlight.h"
 #include "lottiewriter.h"
 #include "measure.h"
 #include "nc.h"
@@ -1851,9 +1853,54 @@ bool Toolkit::RenderToDotLottieFile(const std::string &filename)
 
     ZipFileWriter zip;
     zip.AddFile("manifest.json",
-        "{\"version\":\"2\",\"generator\":\"Verovio " + this->GetVersion()
-            + " (verovio_lottie)\",\"animations\":[{\"id\":\"score\"}],\"initial\":{\"animation\":\"score\"}}");
+        LottieWriter::WriteManifest("Verovio " + this->GetVersion() + " (verovio_lottie)", { "score" }, "score"));
     zip.AddFile("a/score.json", animation);
+
+    return zip.Save(filename);
+}
+
+bool Toolkit::RenderToDotLottieHighlightFile(const std::string &filename, int pageNo)
+{
+    this->ResetLogBuffer();
+
+    LottieDeviceContext lottie;
+    lottie.SetResources(&m_doc.GetResources());
+
+    if (!this->RenderToDeviceContext(pageNo, &lottie)) return false;
+
+    const LottiePage &page = lottie.GetPages().front();
+    const std::unordered_set<std::string> pageIds = LottieHighlightBuilder::CollectIds(*page.root);
+
+    // MVP constants (C00/C02: "cor e duração como constantes"). kFirstHighlightFrame starts
+    // right after the single page-select frame (frame 0) used by the existing single-page
+    // timeline; kHighlightGapFrames is the B01/E2 boundary-frame fix (see gen.py's NOTE_SLOT).
+    const int kFirstHighlightFrame = 1;
+    const int kHighlightDurationFrames = 20;
+    const int kHighlightGapFrames = 1;
+
+    // Runs the timemap functor on m_doc directly (not a cloned MIDI doc via SetMidiDoc()),
+    // so ids match exactly what was just rendered - see C02's "Fora de escopo" for the
+    // repeat-expansion caveat this implies.
+    const std::vector<LottieHighlightGroup> groups = LottieHighlightBuilder::BuildGroups(
+        m_doc, pageIds, kFirstHighlightFrame, kHighlightDurationFrames, kHighlightGapFrames);
+
+    // M3 (docs/plano/C03-slots-interativos.md): every id that BuildGroups placed in a group is,
+    // by construction, a note onset on this page - the exact set that should also be
+    // individually addressable by color slot, even when it is grouped with others for M2.
+    std::unordered_set<std::string> interactiveIds;
+    for (const LottieHighlightGroup &group : groups) {
+        interactiveIds.insert(group.memberIds.begin(), group.memberIds.end());
+    }
+
+    const std::string animation = LottieWriter::WriteAnimation({ &page }, "score", groups, 0xE53935, interactiveIds);
+    const LottieStateMachine stateMachine = LottieHighlightBuilder::BuildStateMachine(groups, "score", "sm_highlight");
+
+    ZipFileWriter zip;
+    zip.AddFile("manifest.json",
+        LottieWriter::WriteManifest("Verovio " + this->GetVersion() + " (verovio_lottie)", { "score" }, "score",
+            { "sm_highlight" }, "sm_highlight"));
+    zip.AddFile("a/score.json", animation);
+    zip.AddFile("s/sm_highlight.json", LottieWriter::WriteStateMachine(stateMachine));
 
     return zip.Save(filename);
 }

@@ -16,6 +16,8 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <unordered_map>
+#include <unordered_set>
 
 //----------------------------------------------------------------------------
 
@@ -252,27 +254,85 @@ static std::string WriteTransformWithRotation(const Point &origin, double rotati
     return out.str();
 }
 
-static std::string WriteFill(const LottieShape &shape, int inheritedColor)
+// A note's (or note group's) reserved, non-overlapping frame slot within the shared "score"
+// timeline (see LottieHighlightGroup) - resolved to the shapes it applies to at write time,
+// the same way ResolveColor()'s inheritedColor already propagates down the tree.
+namespace {
+    struct ActiveHighlight {
+        int startFrame = 0;
+        int durationFrames = 0;
+    };
+} // namespace
+
+// Keyframed "k" array of a color property: holds `baseColor` from t=0 (only needed if the
+// group doesn't already start at frame 0), jumps to `highlightColor` at startFrame, and
+// fades linearly back to `baseColor` by startFrame+durationFrames. Same shape as
+// color_property() in compare/fixtures/b01/gen.py, validated empirically against
+// dotlottie-rs by the B01 spike.
+static std::string WriteColorKeyframes(int baseColor, int highlightColor, const ActiveHighlight &highlight)
 {
-    const int color = (shape.fillColor == COLOR_NONE) ? inheritedColor : shape.fillColor;
-    double r, g, b;
-    ColorIntToRgb01(color, r, g, b);
+    double br, bg, bb, hr, hg, hb;
+    ColorIntToRgb01(baseColor, br, bg, bb);
+    ColorIntToRgb01(highlightColor, hr, hg, hb);
+    const int endFrame = highlight.startFrame + highlight.durationFrames;
 
     std::ostringstream out;
-    out << "{\"ty\":\"fl\",\"c\":{\"a\":0,\"k\":[" << FormatNumber(r) << "," << FormatNumber(g) << ","
-        << FormatNumber(b) << ",1]},\"o\":{\"a\":0,\"k\":" << FormatNumber(shape.fillOpacity * 100) << "},\"r\":1}";
+    out << "[";
+    if (highlight.startFrame > 0) {
+        out << "{\"t\":0,\"s\":[" << FormatNumber(br) << "," << FormatNumber(bg) << "," << FormatNumber(bb)
+            << ",1],\"h\":1,\"i\":{\"x\":1,\"y\":1},\"o\":{\"x\":0,\"y\":0}},";
+    }
+    out << "{\"t\":" << highlight.startFrame << ",\"s\":[" << FormatNumber(hr) << "," << FormatNumber(hg) << ","
+        << FormatNumber(hb) << ",1],\"i\":{\"x\":1,\"y\":1},\"o\":{\"x\":0,\"y\":0}},";
+    out << "{\"t\":" << endFrame << ",\"s\":[" << FormatNumber(br) << "," << FormatNumber(bg) << ","
+        << FormatNumber(bb) << ",1]}";
+    out << "]";
     return out.str();
 }
 
-static std::string WriteStroke(const LottieShape &shape, int inheritedColor)
+// M3 (see docs/plano/C03-slots-interativos.md): "sid" tags a color property so the host can
+// override it directly with Player::set_color_slot, independent of whatever the M2 (highlight)
+// keyframes/branch above are doing - a slot always wins over the native "k" value regardless of
+// the current frame (confirmed empirically by B01's E6). Orthogonal to `highlight`: emitted (or
+// not) the same way on both the "a":1 and "a":0 branches.
+static std::string WriteColorObject(
+    int color, const ActiveHighlight *highlight, int highlightColor, const std::string *slotId)
 {
-    const int color = (shape.strokeColor == COLOR_NONE) ? inheritedColor : shape.strokeColor;
-    double r, g, b;
-    ColorIntToRgb01(color, r, g, b);
+    std::ostringstream out;
+    if (highlight) {
+        out << "{\"a\":1,";
+        if (slotId) out << "\"sid\":\"" << EscapeJsonString(*slotId) << "\",";
+        out << "\"k\":" << WriteColorKeyframes(color, highlightColor, *highlight) << "}";
+    }
+    else {
+        double r, g, b;
+        ColorIntToRgb01(color, r, g, b);
+        out << "{\"a\":0,";
+        if (slotId) out << "\"sid\":\"" << EscapeJsonString(*slotId) << "\",";
+        out << "\"k\":[" << FormatNumber(r) << "," << FormatNumber(g) << "," << FormatNumber(b) << ",1]}";
+    }
+    return out.str();
+}
+
+static std::string WriteFill(const LottieShape &shape, int inheritedColor, const ActiveHighlight *highlight,
+    int highlightColor, const std::string *slotId)
+{
+    const int color = (shape.fillColor == COLOR_NONE) ? inheritedColor : shape.fillColor;
 
     std::ostringstream out;
-    out << "{\"ty\":\"st\",\"c\":{\"a\":0,\"k\":[" << FormatNumber(r) << "," << FormatNumber(g) << ","
-        << FormatNumber(b) << ",1]},\"o\":{\"a\":0,\"k\":" << FormatNumber(shape.strokeOpacity * 100)
+    out << "{\"ty\":\"fl\",\"c\":" << WriteColorObject(color, highlight, highlightColor, slotId);
+    out << ",\"o\":{\"a\":0,\"k\":" << FormatNumber(shape.fillOpacity * 100) << "},\"r\":1}";
+    return out.str();
+}
+
+static std::string WriteStroke(const LottieShape &shape, int inheritedColor, const ActiveHighlight *highlight,
+    int highlightColor, const std::string *slotId)
+{
+    const int color = (shape.strokeColor == COLOR_NONE) ? inheritedColor : shape.strokeColor;
+
+    std::ostringstream out;
+    out << "{\"ty\":\"st\",\"c\":" << WriteColorObject(color, highlight, highlightColor, slotId);
+    out << ",\"o\":{\"a\":0,\"k\":" << FormatNumber(shape.strokeOpacity * 100)
         << "},\"w\":{\"a\":0,\"k\":" << FormatNumber(shape.strokeWidth) << "},\"lc\":" << MapLineCap(shape.lineCap)
         << ",\"lj\":" << MapLineJoin(shape.lineJoin) << ",\"ml\":4";
     if (shape.dashLength > 0) {
@@ -323,7 +383,8 @@ static std::string WriteEllipse(const LottieShape &shape)
     return out.str();
 }
 
-static std::string WriteShapeGroup(const LottieShape &shape, int inheritedColor)
+static std::string WriteShapeGroup(const LottieShape &shape, int inheritedColor, const ActiveHighlight *highlight,
+    int highlightColor, const std::string *slotId)
 {
     std::vector<std::string> items;
 
@@ -339,42 +400,66 @@ static std::string WriteShapeGroup(const LottieShape &shape, int inheritedColor)
 
     // Stroke before fill so that it paints on top, as in SVG.
     if (shape.hasStroke) {
-        items.push_back(WriteStroke(shape, inheritedColor));
+        items.push_back(WriteStroke(shape, inheritedColor, highlight, highlightColor, slotId));
     }
     if (shape.hasFill) {
-        items.push_back(WriteFill(shape, inheritedColor));
+        items.push_back(WriteFill(shape, inheritedColor, highlight, highlightColor, slotId));
     }
     items.push_back(WriteTransformDefault());
 
     return "{\"ty\":\"gr\",\"it\":[" + JoinItems(items) + "]}";
 }
 
-static std::string WriteNodeGroup(const LottieNode &node, int inheritedColor);
+using HighlightsById = std::unordered_map<std::string, ActiveHighlight>;
+using InteractiveIds = std::unordered_set<std::string>;
+
+static std::string WriteNodeGroup(const LottieNode &node, int inheritedColor, const ActiveHighlight *highlight,
+    int highlightColor, const HighlightsById &highlightsById, const std::string *slotId,
+    const InteractiveIds &interactiveIds);
 
 // Children are written from last to first: in the SVG/IR document order the later sibling
 // paints on top, while in Lottie the first item of "it" paints on top.
-static void AppendChildrenReversed(
-    const std::vector<LottieChild> &children, int inheritedColor, std::vector<std::string> &items)
+static void AppendChildrenReversed(const std::vector<LottieChild> &children, int inheritedColor,
+    const ActiveHighlight *highlight, int highlightColor, const HighlightsById &highlightsById,
+    const std::string *slotId, const InteractiveIds &interactiveIds, std::vector<std::string> &items)
 {
     for (auto it = children.rbegin(); it != children.rend(); ++it) {
         if (it->group) {
             if (it->group->hidden) {
                 continue;
             }
-            items.push_back(WriteNodeGroup(*it->group, inheritedColor));
+            items.push_back(WriteNodeGroup(
+                *it->group, inheritedColor, highlight, highlightColor, highlightsById, slotId, interactiveIds));
         }
         else {
-            items.push_back(WriteShapeGroup(it->shape, inheritedColor));
+            items.push_back(WriteShapeGroup(it->shape, inheritedColor, highlight, highlightColor, slotId));
         }
     }
 }
 
-static std::string WriteNodeGroup(const LottieNode &node, int inheritedColor)
+static std::string WriteNodeGroup(const LottieNode &node, int inheritedColor, const ActiveHighlight *highlight,
+    int highlightColor, const HighlightsById &highlightsById, const std::string *slotId,
+    const InteractiveIds &interactiveIds)
 {
     const int nodeColor = ResolveColor(node.colorCss, inheritedColor);
 
+    ActiveHighlight ownHighlight;
+    const ActiveHighlight *nodeHighlight = highlight;
+    const std::string *nodeSlotId = slotId;
+    if (!node.id.empty()) {
+        const auto it = highlightsById.find(node.id);
+        if (it != highlightsById.end()) {
+            ownHighlight = it->second;
+            nodeHighlight = &ownHighlight;
+        }
+        if (interactiveIds.find(node.id) != interactiveIds.end()) {
+            nodeSlotId = &node.id;
+        }
+    }
+
     std::vector<std::string> items;
-    AppendChildrenReversed(node.children, nodeColor, items);
+    AppendChildrenReversed(
+        node.children, nodeColor, nodeHighlight, highlightColor, highlightsById, nodeSlotId, interactiveIds, items);
     items.push_back(node.hasRotation ? WriteTransformWithRotation(node.rotationOrigin, node.rotation)
                                       : WriteTransformDefault());
 
@@ -384,11 +469,13 @@ static std::string WriteNodeGroup(const LottieNode &node, int inheritedColor)
         + "\",\"it\":[" + JoinItems(items) + "]}";
 }
 
-static std::string WriteLayerShapes(const LottiePage &page)
+static std::string WriteLayerShapes(const LottiePage &page, const HighlightsById &highlightsById, int highlightColor,
+    const InteractiveIds &interactiveIds)
 {
     std::vector<std::string> items;
     const int rootColor = ResolveColor(page.root->colorCss, COLOR_BLACK);
-    AppendChildrenReversed(page.root->children, rootColor, items);
+    AppendChildrenReversed(
+        page.root->children, rootColor, nullptr, highlightColor, highlightsById, nullptr, interactiveIds, items);
     return JoinItems(items);
 }
 
@@ -438,7 +525,9 @@ static PageMetrics ComputePageMetrics(const LottiePage &page)
 // LottieWriter
 //----------------------------------------------------------------------------
 
-std::string LottieWriter::WriteAnimation(const std::vector<const LottiePage *> &pages, const std::string &name)
+std::string LottieWriter::WriteAnimation(const std::vector<const LottiePage *> &pages, const std::string &name,
+    const std::vector<LottieHighlightGroup> &highlightGroups, int highlightColor,
+    const std::unordered_set<std::string> &interactiveIds)
 {
     int w = 0;
     int h = 0;
@@ -453,10 +542,30 @@ std::string LottieWriter::WriteAnimation(const std::vector<const LottiePage *> &
 
     const int pageCount = static_cast<int>(pages.size());
 
+    HighlightsById highlightsById;
+    int highlightEnd = 0;
+    for (const LottieHighlightGroup &group : highlightGroups) {
+        highlightEnd = std::max(highlightEnd, group.startFrame + group.durationFrames);
+        for (const std::string &memberId : group.memberIds) {
+            highlightsById[memberId] = { group.startFrame, group.durationFrames };
+        }
+    }
+    const int op = std::max(pageCount, highlightEnd);
+
+    std::vector<std::string> markerItems;
+    if (!highlightGroups.empty()) {
+        markerItems.push_back("{\"cm\":\"idle\",\"tm\":0,\"dr\":1}");
+        for (const LottieHighlightGroup &group : highlightGroups) {
+            markerItems.push_back("{\"cm\":\"" + EscapeJsonString(group.name) + "\",\"tm\":"
+                + std::to_string(group.startFrame) + ",\"dr\":" + std::to_string(group.durationFrames) + "}");
+        }
+    }
+
     std::ostringstream out;
     out.imbue(std::locale::classic());
-    out << "{\"v\":\"5.7.0\",\"fr\":30,\"ip\":0,\"op\":" << pageCount << ",\"w\":" << w << ",\"h\":" << h
-        << ",\"nm\":\"" << EscapeJsonString(name) << "\",\"ddd\":0,\"assets\":[],\"markers\":[],\"layers\":[";
+    out << "{\"v\":\"5.7.0\",\"fr\":30,\"ip\":0,\"op\":" << op << ",\"w\":" << w << ",\"h\":" << h << ",\"nm\":\""
+        << EscapeJsonString(name) << "\",\"ddd\":0,\"assets\":[],\"markers\":[" << JoinItems(markerItems)
+        << "],\"layers\":[";
 
     for (int i = 0; i < pageCount; ++i) {
         if (i) out << ",";
@@ -467,16 +576,120 @@ std::string LottieWriter::WriteAnimation(const std::vector<const LottiePage *> &
         const double py = m.ty + m.scale * page.originY;
         const double s = m.scale * 100.0;
 
+        // Only the last page's own out-point is stretched to cover the highlight tail (see
+        // C02's "Decisão de escopo": this writer supports a highlighted last page, the
+        // multi-page/whole-score case is C04's).
+        const int pageOp = (i == pageCount - 1) ? op : (i + 1);
+
         out << "{\"ddd\":0,\"ind\":" << (i + 1) << ",\"ty\":4,\"nm\":\"page-" << (i + 1) << "\",\"sr\":1,"
             << "\"ks\":{\"o\":{\"a\":0,\"k\":100},\"r\":{\"a\":0,\"k\":0},"
             << "\"p\":{\"a\":0,\"k\":[" << FormatNumber(px) << "," << FormatNumber(py) << ",0]},"
             << "\"a\":{\"a\":0,\"k\":[0,0,0]},"
             << "\"s\":{\"a\":0,\"k\":[" << FormatNumber(s) << "," << FormatNumber(s) << ",100]}},"
-            << "\"ao\":0,\"shapes\":[" << WriteLayerShapes(page) << "],"
-            << "\"ip\":" << i << ",\"op\":" << (i + 1) << ",\"st\":0,\"bm\":0}";
+            << "\"ao\":0,\"shapes\":[" << WriteLayerShapes(page, highlightsById, highlightColor, interactiveIds)
+            << "],"
+            << "\"ip\":" << i << ",\"op\":" << pageOp << ",\"st\":0,\"bm\":0}";
     }
 
     out << "]}";
+    return out.str();
+}
+
+//----------------------------------------------------------------------------
+// LottieWriter::WriteStateMachine
+//----------------------------------------------------------------------------
+
+static std::string WriteSMTransition(const LottieSMTransition &transition)
+{
+    return "{\"type\":\"Transition\",\"toState\":\"" + EscapeJsonString(transition.toState)
+        + "\",\"guards\":[{\"type\":\"Event\",\"inputName\":\"" + EscapeJsonString(transition.eventInput) + "\"}]}";
+}
+
+static std::string WriteSMState(const LottieSMState &state)
+{
+    std::vector<std::string> transitionItems;
+    for (const LottieSMTransition &transition : state.transitions) {
+        transitionItems.push_back(WriteSMTransition(transition));
+    }
+    const std::string transitions = "\"transitions\":[" + JoinItems(transitionItems) + "]";
+
+    if (state.isGlobal) {
+        // No "animation"/"segment"/"autoplay"/"loop": not part of the format actually
+        // exercised by the B01 spike for GlobalState (compare/fixtures/b01/gen.py).
+        return "{\"name\":\"" + EscapeJsonString(state.name) + "\",\"type\":\"GlobalState\"," + transitions + "}";
+    }
+
+    std::ostringstream out;
+    out << "{\"name\":\"" << EscapeJsonString(state.name) << "\",\"type\":\"PlaybackState\",\"animation\":\""
+        << EscapeJsonString(state.animation) << "\",\"segment\":\"" << EscapeJsonString(state.segment)
+        << "\",\"autoplay\":" << (state.autoplay ? "true" : "false") << ",\"loop\":" << (state.loop ? "true" : "false")
+        << "," << transitions << "}";
+    return out.str();
+}
+
+// Inputs are derived from the transitions rather than requested from the caller, so that a
+// state machine can never reference an Event input that was not declared (and vice versa).
+static std::vector<std::string> CollectEventInputs(const LottieStateMachine &stateMachine)
+{
+    std::vector<std::string> inputs;
+    std::unordered_set<std::string> seen;
+    for (const LottieSMState &state : stateMachine.states) {
+        for (const LottieSMTransition &transition : state.transitions) {
+            if (seen.insert(transition.eventInput).second) {
+                inputs.push_back(transition.eventInput);
+            }
+        }
+    }
+    return inputs;
+}
+
+std::string LottieWriter::WriteStateMachine(const LottieStateMachine &stateMachine)
+{
+    std::vector<std::string> stateItems;
+    for (const LottieSMState &state : stateMachine.states) {
+        stateItems.push_back(WriteSMState(state));
+    }
+
+    std::vector<std::string> inputItems;
+    for (const std::string &name : CollectEventInputs(stateMachine)) {
+        inputItems.push_back("{\"type\":\"Event\",\"name\":\"" + EscapeJsonString(name) + "\"}");
+    }
+
+    return "{\"initial\":\"" + EscapeJsonString(stateMachine.initial) + "\",\"states\":[" + JoinItems(stateItems)
+        + "],\"inputs\":[" + JoinItems(inputItems) + "],\"interactions\":[]}";
+}
+
+//----------------------------------------------------------------------------
+// LottieWriter::WriteManifest
+//----------------------------------------------------------------------------
+
+std::string LottieWriter::WriteManifest(const std::string &generator, const std::vector<std::string> &animationIds,
+    const std::string &initialAnimation, const std::vector<std::string> &stateMachineIds,
+    const std::string &initialStateMachine)
+{
+    std::vector<std::string> animationItems;
+    for (const std::string &id : animationIds) {
+        animationItems.push_back("{\"id\":\"" + EscapeJsonString(id) + "\"}");
+    }
+
+    std::ostringstream out;
+    out << "{\"version\":\"2\",\"generator\":\"" << EscapeJsonString(generator) << "\",\"animations\":["
+        << JoinItems(animationItems) << "]";
+
+    if (!stateMachineIds.empty()) {
+        std::vector<std::string> smItems;
+        for (const std::string &id : stateMachineIds) {
+            smItems.push_back("{\"id\":\"" + EscapeJsonString(id) + "\"}");
+        }
+        out << ",\"stateMachines\":[" << JoinItems(smItems) << "]";
+    }
+
+    out << ",\"initial\":{\"animation\":\"" << EscapeJsonString(initialAnimation) << "\"";
+    if (!initialStateMachine.empty()) {
+        out << ",\"stateMachine\":\"" << EscapeJsonString(initialStateMachine) << "\"";
+    }
+    out << "}}";
+
     return out.str();
 }
 

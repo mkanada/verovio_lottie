@@ -69,6 +69,8 @@ Arquivos novos previstos (todos dentro de `verovio/`):
 | `include/vrv/lottiewriter.h`, `src/lottiewriter.cpp` | A03 | IR → JSON Lottie |
 | `include/vrv/svgpathparser.h`, `src/svgpathparser.cpp` | A08 | Path SVG dos glifos → béziers |
 | `ZipFileWriter` em `include/vrv/filereader.h` / `src/filereader.cpp` | A11 | Escrita do zip |
+| `include/vrv/lottiestatemachine.h` | C01 | IR da state machine dotLottie v2 |
+| `include/vrv/lottiehighlight.h`, `src/lottiehighlight.cpp` | C02 | Agrupamento M2 por instante do timemap + state machine de destaque |
 
 ## Mapa do código (verificado)
 
@@ -163,7 +165,7 @@ usuário ao chegar neles.
 | --- | --- | --- | --- |
 | D-CLI | ~~Nomes dos formatos de saída na CLI~~ — **decidido em A04**: `lottie` (JSON cru de uma página, para depuração) e `dotlottie` (pacote final da música) | ~~A04~~, A12 | `lottie` (JSON cru de uma página, para depuração) e `dotlottie` (pacote final da música) |
 | D-TEXTO | ~~Como renderizar texto comum (títulos, andamento, dedilhados, letra)~~ — **decidido em B03**: T1 — fonte TTF (Liberation Serif, Regular+Italic+Bold) embutida no pacote + camada de texto nativa do dotLottie (`ty:5`+`fonts.list`), em vez de converter em contornos. Ver `docs/plano/decisoes/B03-texto.md`. | D01 | T1 (fonte embutida) |
-| D-DESTAQUE | ~~Mecanismo para destacar notas simultâneas (acordes, duas mãos) com fade controlado pelo Lottie~~ — **decidido em B02**: dois mecanismos por modo de uso, mutuamente exclusivos — M2 (agrupamento por instante do timemap, fade autorado) no modo automático; M3 (slot de cor por nota, sem limite, fade não autorado) no modo interativo. Ver `docs/plano/decisoes/B02-mecanismo-destaque.md`. | ~~Fase C~~ C01 | M2 (auto) + M3 (interativo) |
+| D-DESTAQUE | ~~Mecanismo para destacar notas simultâneas (acordes, duas mãos) com fade controlado pelo Lottie~~ — **decidido em B02**: dois mecanismos por modo de uso, mutuamente exclusivos — M2 (agrupamento por instante do timemap, fade autorado) no modo automático; M3 (slot de cor por nota, sem limite, fade não autorado) no modo interativo. Ver `docs/plano/decisoes/B02-mecanismo-destaque.md`. | ~~Fase C~~ ~~C01~~ ~~C02~~ ~~C03~~ (C01 entrega o writer genérico + valida o Risco 1; C02 entrega M2 funcional — cores keyframadas + agrupamento por instante do timemap — para uma página por vez; C03 entrega M3 — slot de cor por nota — e o protocolo de handoff M2↔M3, ver `docs/plano/C03-slots-interativos.md`) | M2 (auto) + M3 (interativo) |
 | D-LAYOUT-PAGINAS | ~~Disposição das páginas na composição e animação de virada~~ — **decidido em B02**: trilha horizontal + engine separado do destaque, virada em dois eventos discretos (entrar no último compasso da página atual → "espreitar"; entrar no primeiro compasso da próxima → "cobrir"). Ver `docs/plano/decisoes/B02-mecanismo-destaque.md`. | ~~C (virada de página)~~ C04 | trilha horizontal, dois eventos por fronteira |
 
 Decisões **já tomadas** (não reabrir): ver "Decisões arquiteturais já tomadas" no
@@ -224,7 +226,10 @@ Decisões **já tomadas** (não reabrir): ver "Decisões arquiteturais já tomad
 | [B01](B01-spike-state-machine.md) | Spike: state machine com eventos por `xml:id` | A05 | — | concluído |
 | [B02](B02-memorando-mecanismo-de-destaque.md) | Memorando: mecanismo de destaque e virada | B01 | produziu D-DESTAQUE e D-LAYOUT-PAGINAS | concluído |
 | [B03](B03-memorando-texto.md) | Memorando: texto comum | A13 | produziu D-TEXTO | concluído |
-| [C00](C00-fase-c-esboco.md) | Fase C (animações) — esboço a detalhar, reescrever em C01…Cn | B02, A13 | — (D-DESTAQUE e D-LAYOUT-PAGINAS já decididos) | pendente |
+| [C00](C00-fase-c-esboco.md) | Fase C (animações) — esboço a detalhar, reescrever em C01…Cn | B02, A13 | — (D-DESTAQUE e D-LAYOUT-PAGINAS já decididos) | em andamento (C01, C02, C03 já extraídos; C04…C06 seguem como esboço) |
+| [C01](C01-writer-state-machine.md) | Writer de state machine (`s/<id>.json`, `stateMachines` no `manifest.json`) | A12, B02 | — | concluído |
+| [C02](C02-notas-animadas.md) | Propriedades animadas das notas (M2: cores keyframadas + agrupamento por instante do timemap), uma página por vez | A12, C01 | — | concluído |
+| [C03](C03-slots-interativos.md) | Slots interativos (M3: `sid` por nota), protocolo de handoff M2↔M3 (`fire idle`/`clear_slots`) e validação de nomes/unicidade | A12, C02 | — | concluído |
 | [D00](D00-fase-d-esboco.md) | Fase D (paridade completa) — esboço a detalhar | A13, B03 | — (D-TEXTO já decidido) | pendente |
 | [E00](E00-bindings-opcional.md) | Bindings JS/Python (opcional) | A12 | — | opcional |
 
