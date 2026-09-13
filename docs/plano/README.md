@@ -161,7 +161,7 @@ usuário ao chegar neles.
 
 | Id | Pergunta | Bloqueia | Recomendação inicial |
 | --- | --- | --- | --- |
-| D-CLI | Nomes dos formatos de saída na CLI | A04, A12 | `lottie` (JSON cru de uma página, para depuração) e `dotlottie` (pacote final da música) |
+| D-CLI | ~~Nomes dos formatos de saída na CLI~~ — **decidido em A04**: `lottie` (JSON cru de uma página, para depuração) e `dotlottie` (pacote final da música) | ~~A04~~, A12 | `lottie` (JSON cru de uma página, para depuração) e `dotlottie` (pacote final da música) |
 | D-TEXTO | Como renderizar texto comum (títulos, andamento, dedilhados, letra) | D01 | Decidir após o memorando B03 |
 | D-DESTAQUE | Mecanismo para destacar notas simultâneas (acordes, duas mãos) com fade controlado pelo Lottie | Fase C | Decidir após o memorando B02 |
 | D-LAYOUT-PAGINAS | Disposição das páginas na composição e animação de virada | C (virada de página) | Decidir junto com D-DESTAQUE |
@@ -194,7 +194,7 @@ Decisões **já tomadas** (não reabrir): ver "Decisões arquiteturais já tomad
 | [A01](A01-esqueleto-lottiedevicecontext.md) | Esqueleto do `LottieDeviceContext` | — | — | concluído |
 | [A02](A02-arvore-de-graficos.md) | Árvore interna (IR) de grupos e páginas | A01 | — | concluído |
 | [A03](A03-serializador-lottie-json.md) | Serializador `LottieWriter` | A02 | — | concluído |
-| [A04](A04-toolkit-e-cli-lottie-json.md) | `Toolkit::RenderToLottie` + CLI `lottie` | A03 | D-CLI | pendente |
+| [A04](A04-toolkit-e-cli-lottie-json.md) | `Toolkit::RenderToLottie` + CLI `lottie` | A03 | D-CLI | concluído |
 | [A05](A05-script-de-comparacao.md) | Script de comparação por página + fontes no `compare` | A04 | — | pendente |
 | [A06](A06-primitivas-retas-e-cores.md) | Linhas, polígonos, retângulos, elipses e cores | A05 | — | pendente |
 | [A07](A07-curvas-bezier.md) | Curvas Bézier (ligaduras, beams curvos) | A06 | — | pendente |

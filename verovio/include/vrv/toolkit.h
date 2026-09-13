@@ -376,6 +376,25 @@ public:
     bool RenderToSVGFile(const std::string &filename, int pageNo = 1);
 
     /**
+     * Render a page to Lottie JSON.
+     *
+     * @param pageNo The page to render (1-based)
+     * @return The Lottie animation JSON as a string
+     */
+    std::string RenderToLottie(int pageNo = 1);
+
+    /**
+     * Render a page to Lottie JSON and save it to the file.
+     *
+     * @remark nojs
+     *
+     * @param filename The output filename
+     * @param pageNo The page to render (1-based)
+     * @return True if the file was successfully written
+     */
+    bool RenderToLottieFile(const std::string &filename, int pageNo = 1);
+
+    /**
      * Render the document to MIDI.
      *
      * @return A MIDI file as a base64 encoded string

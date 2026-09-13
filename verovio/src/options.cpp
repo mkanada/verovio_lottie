@@ -2019,6 +2019,12 @@ bool Options::SetOutputTo(std::string const &outputTo)
     else if (outputTo == "mei-pb-serialized") {
         m_outputToFormat = SERIALIZATION;
     }
+    else if (outputTo == "lottie") {
+        m_outputToFormat = LOTTIE;
+    }
+    else if (outputTo == "dotlottie") {
+        m_outputToFormat = DOTLOTTIE;
+    }
     else if (outputTo != "svg") {
         LogError("Output format '%s' is not supported", outputTo.c_str());
         return false;

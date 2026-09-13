@@ -32,6 +32,8 @@
 #include "iopae.h"
 #include "iovolpiano.h"
 #include "layer.h"
+#include "lottiedevicecontext.h"
+#include "lottiewriter.h"
 #include "measure.h"
 #include "nc.h"
 #include "neume.h"
@@ -1801,6 +1803,38 @@ bool Toolkit::RenderToSVGFile(const std::string &filename, int pageNo)
     this->ResetLogBuffer();
 
     std::string output = this->RenderToSVG(pageNo, true);
+
+    std::ofstream outfile;
+    outfile.open(filename.c_str());
+
+    if (!outfile.is_open()) {
+        // add message?
+        return false;
+    }
+
+    outfile << output;
+    outfile.close();
+    return true;
+}
+
+std::string Toolkit::RenderToLottie(int pageNo)
+{
+    this->ResetLogBuffer();
+
+    LottieDeviceContext lottie;
+    lottie.SetResources(&m_doc.GetResources());
+
+    if (!this->RenderToDeviceContext(pageNo, &lottie)) return "";
+
+    return LottieWriter::WriteAnimation({ &lottie.GetPages().front() }, "verovio");
+}
+
+bool Toolkit::RenderToLottieFile(const std::string &filename, int pageNo)
+{
+    this->ResetLogBuffer();
+
+    std::string output = this->RenderToLottie(pageNo);
+    if (output.empty()) return false;
 
     std::ofstream outfile;
     outfile.open(filename.c_str());

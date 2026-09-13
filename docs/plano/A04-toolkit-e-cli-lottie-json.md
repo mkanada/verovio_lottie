@@ -69,4 +69,35 @@ Da raiz do repositório, com `mkdir -p /tmp/vrv-a04`:
 
 ## Notas de execução
 
-_(preencher ao executar)_
+- **D-CLI confirmada com o usuário**: nomes `lottie` (JSON de uma página) e
+  `dotlottie` (pacote final, A12), conforme a recomendação inicial do README.
+- Implementado exatamente como descrito: `LOTTIE`/`DOTLOTTIE` no fim do enum
+  `FileFormat` (`toolkitdef.h`), `"lottie"`/`"dotlottie"` em
+  `Options::SetOutputTo` (`options.cpp`), `Toolkit::RenderToLottie`/
+  `RenderToLottieFile` em `toolkit.h`/`toolkit.cpp` (mesmo padrão de
+  `RenderToSVG`/`RenderToSVGFile`; `RenderToLottieFile` retorna `false` se
+  `RenderToLottie` vier vazio, já que não há indentação/declaração XML para
+  diferenciar erro de saída vazia como no SVG).
+- `LottieDeviceContext` não tem construtor com `docId` (diferente de
+  `SvgDeviceContext(m_doc.GetID())`) — usei o construtor default, como já era
+  o caso em A01/A02.
+- `tools/main.cpp`: `"lottie"` adicionado à lista de formatos e à mensagem de
+  erro (L284-L292 originais), novo ramo `else if (outformat == "lottie")`
+  copiando o laço do SVG com extensão `.json`. **Não** adicionado à condição
+  que força `breaks: none` (L313 original), conforme instruído.
+- Includes `lottiedevicecontext.h`/`lottiewriter.h` adicionados em ordem
+  alfabética em `toolkit.cpp` (entre `layer.h` e `measure.h`).
+- Critérios de aceite confirmados, todos na raiz do repositório:
+  - `verovio/tools/verovio -t lottie corpus/mei/Grieg_Little_bird_Op43_No4.mei -o /tmp/vrv-a04/grieg --resource-path verovio/data`
+    gerou `/tmp/vrv-a04/grieg.json` (só os avisos pré-existentes de
+    `tie`/`tstamp`).
+  - `python3 -m json.tool` validou o JSON sem erro.
+  - `w`/`h` do JSON = `2100`/`2970`, iguais ao `width`/`height` do `<svg>`
+    gerado com `-t svg` para o mesmo arquivo.
+  - `compare/target/release/compare lottie-to-png ... --width 2100 --height 2970`
+    gerou o PNG (128KB, vazio nesta etapa — esperado), com os avisos
+    inofensivos de `set_frame`/`render` documentados em `compare/README.md`.
+  - Com `-a`, gerou `grieg_001.json` e `grieg_002.json` (peça de 2 páginas).
+  - `-t svg` continua funcionando igual (mesmo arquivo, mesmos avisos).
+- Build limpo: `cmake ../cmake && make -j4` sem warnings novos nos arquivos
+  tocados (`toolkit.cpp`, `options.cpp`, `main.cpp`).
