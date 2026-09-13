@@ -242,7 +242,7 @@ Decisões **já tomadas** (não reabrir): ver "Decisões arquiteturais já tomad
 | [C06](C06-opcoes-cor-duracao.md) | Opções de CLI para cor/duração do destaque e da virada de página | C02, C04 | — | concluído |
 | [D00](D00-fase-d-esboco.md) | Fase D (paridade completa) — esboço a detalhar | A13, B03 | — (D-TEXTO já decidido) | concluído (reescrito em D01-D06) |
 | [D01](D01-texto-comum.md) | Texto comum: Liberation Serif embutida (T1), camada de texto nativa `ty:5` | A10, B03 | — (T1 já decidido) | concluído (ver "Notas de execução" — achado importante: % de divergência do corpus não caiu como esperado, causa é a ferramenta de comparação, não o exportador) |
-| [D01-2](D01-2-controle-de-fonte-na-comparacao.md) | Tarefa paralela: `compare svg-to-png` fixar a fonte (Liberation Serif) via `fontdb::set_serif_family`, independente do sistema — hoje `--font` sozinho não muda nada | D01, A05 | — (fonte já decidida em B03; só a ferramenta de comparação) | pendente |
+| [D01-2](D01-2-controle-de-fonte-na-comparacao.md) | Tarefa paralela: `compare svg-to-png` fixar a fonte (Liberation Serif) via `fontdb::set_serif_family`, independente do sistema — hoje `--font` sozinho não muda nada | D01, A05 | — (fonte já decidida em B03; só a ferramenta de comparação) | concluído (ver "Notas de execução" — corpus caiu de 0,1115%–0,8206%/média 0,3601% para 0,1002%–0,6646%/média 0,3154%; bug do `<title>` aninhado ainda em aberto) |
 | [D02](D02-drawsvgshape.md) | `DrawSvgShape` (SVG embutido no MEI) | A08 | — | pendente |
 | [D03](D03-drawgraphicuri.md) | `DrawGraphicUri` (imagens raster) | — | vale a pena implementar? qual resolução de `target`? | bloqueado (decisão) |
 | [D04](D04-rotategraphic.md) | `RotateGraphic` — confirmar sinal e pivô da rotação | — | — | pendente |

@@ -112,6 +112,9 @@ FONTS=(
     "$REPO_ROOT/verovio/fonts/Bravura/Bravura.otf"
     "$REPO_ROOT/verovio/fonts/Leland/Leland.otf"
     "$REPO_ROOT/verovio/fonts/Gootville/Gootville.otf"
+    "$REPO_ROOT/verovio/data/text/LiberationSerif-Regular.ttf"
+    "$REPO_ROOT/verovio/data/text/LiberationSerif-Italic.ttf"
+    "$REPO_ROOT/verovio/data/text/LiberationSerif-Bold.ttf"
 )
 FONT_ARGS=()
 for font in "${FONTS[@]}"; do
@@ -127,7 +130,7 @@ echo "==> Renderizando Lottie (página $PAGE)"
 mv "$TMP_PREFIX.json" "$PREFIX.json"
 
 echo "==> SVG -> PNG"
-"$COMPARE_BIN" svg-to-png "$PREFIX.svg" "$PREFIX-svg.png" "${FONT_ARGS[@]}"
+"$COMPARE_BIN" svg-to-png "$PREFIX.svg" "$PREFIX-svg.png" "${FONT_ARGS[@]}" --pin-serif-family "Liberation Serif"
 
 echo "==> Lendo dimensões do PNG do SVG"
 read -r WIDTH HEIGHT < <(python3 - "$PREFIX-svg.png" <<'PYEOF'

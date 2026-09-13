@@ -39,6 +39,9 @@ FONTS=(
     "$REPO_ROOT/verovio/fonts/Bravura/Bravura.otf"
     "$REPO_ROOT/verovio/fonts/Leland/Leland.otf"
     "$REPO_ROOT/verovio/fonts/Gootville/Gootville.otf"
+    "$REPO_ROOT/verovio/data/text/LiberationSerif-Regular.ttf"
+    "$REPO_ROOT/verovio/data/text/LiberationSerif-Italic.ttf"
+    "$REPO_ROOT/verovio/data/text/LiberationSerif-Bold.ttf"
 )
 FONT_ARGS=()
 for font in "${FONTS[@]}"; do
@@ -92,7 +95,7 @@ for INPUT_FILE in "${INPUT_FILES[@]}"; do
         mv "$SVG_FILE" "$PAGE_PREFIX.svg"
 
         echo "==> Página $PAGE_NUM: SVG -> PNG"
-        "$COMPARE_BIN" svg-to-png "$PAGE_PREFIX.svg" "$PAGE_PREFIX-svg.png" "${FONT_ARGS[@]}"
+        "$COMPARE_BIN" svg-to-png "$PAGE_PREFIX.svg" "$PAGE_PREFIX-svg.png" "${FONT_ARGS[@]}" --pin-serif-family "Liberation Serif"
 
         read -r WIDTH HEIGHT < <(python3 - "$PAGE_PREFIX-svg.png" <<'PYEOF'
 import struct

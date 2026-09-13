@@ -31,6 +31,12 @@ enum Command {
         /// `@font-face` — o resvg não carrega esse `@font-face` embutido sozinho.
         #[arg(long = "font")]
         fonts: Vec<PathBuf>,
+        /// Nome de família a que o genérico CSS "serif" deve resolver,
+        /// independente do que o SO tem instalado (ver docs/plano/
+        /// D01-2-controle-de-fonte-na-comparacao.md). Precisa bater o nome de
+        /// família de uma fonte já carregada via --font.
+        #[arg(long)]
+        pin_serif_family: Option<String>,
     },
     /// Renderiza um frame de uma animação Lottie (.json) ou dotLottie (.lottie) para PNG.
     LottieToPng {
@@ -107,7 +113,12 @@ enum Command {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::SvgToPng { input, output, fonts } => svg_to_png(&input, &output, &fonts),
+        Command::SvgToPng {
+            input,
+            output,
+            fonts,
+            pin_serif_family,
+        } => svg_to_png(&input, &output, &fonts, pin_serif_family.as_deref()),
         Command::LottieToPng {
             input,
             output,
@@ -151,7 +162,12 @@ fn main() -> Result<()> {
     }
 }
 
-fn svg_to_png(input: &Path, output: &Path, fonts: &[PathBuf]) -> Result<()> {
+fn svg_to_png(
+    input: &Path,
+    output: &Path,
+    fonts: &[PathBuf],
+    pin_serif_family: Option<&str>,
+) -> Result<()> {
     let svg_data =
         std::fs::read(input).with_context(|| format!("lendo {}", input.display()))?;
 
@@ -173,6 +189,12 @@ fn svg_to_png(input: &Path, output: &Path, fonts: &[PathBuf]) -> Result<()> {
         opt.fontdb_mut()
             .load_font_file(font)
             .with_context(|| format!("carregando fonte {}", font.display()))?;
+    }
+    // Sem isto, o genérico CSS "serif" (usado pelo Verovio como "Times, serif")
+    // resolve via fontconfig do sistema operacional, que varia por ambiente —
+    // ver docs/plano/D01-2-controle-de-fonte-na-comparacao.md.
+    if let Some(family) = pin_serif_family {
+        opt.fontdb_mut().set_serif_family(family);
     }
 
     let tree = usvg::Tree::from_data(&svg_data, &opt)

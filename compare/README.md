@@ -149,21 +149,27 @@ os caminhos mais óbvios são (a) contornar o bug pré-processando o SVG antes
 do `svg-to-png` (remover o `<title>` aninhado desses `tspan`s), ou
 (b) investigar/reportar o bug no próprio `resvg`.
 
-## Pegadinha adicional: `--font` não força o `resvg` a trocar a fonte de
-## "Times, serif" (achado em D01)
+## Pegadinha adicional (resolvida em D01-2): `--font` sozinho não força o
+## `resvg` a trocar a fonte de "Times, serif"
 
-Também descoberto em D01: `fc-match "Times, serif"` neste ambiente resolve
-para **Nimbus Roman**, não para a Liberation Serif que o exportador dotLottie
+Descoberto em D01: `fc-match "Times, serif"` neste ambiente resolve para
+**Nimbus Roman**, não para a Liberation Serif que o exportador dotLottie
 embute de verdade no pacote (T1, `docs/plano/decisoes/B03-texto.md`). Tentar
 `compare svg-to-png --font <LiberationSerif-*.ttf>` para igualar as fontes
-**não teve efeito nenhum** no PNG gerado (byte a byte idêntico com e sem a
-flag) — o fontconfig/`resvg` deste ambiente continua preferindo a Nimbus
-Roman já registrada no sistema para a família genérica "Times, serif",
-independente de quais arquivos são carregados via `--font`. Consequência:
-mesmo com posição/tamanho/estilo perfeitos, texto comum vai sempre comparar
-contornos de **fontes fisicamente diferentes** entre SVG e Lottie (ao
-contrário de glifos SMuFL, que usam a mesma geometria "assada" nos dois
-lados) — isso por si só já produz uma faixa de divergência de pixels maior
-que ruído simples de antialiasing. Não investigado mais a fundo (precisaria
-mexer na resolução de fontes do `resvg`/numa config de fontconfig isolada
-para este binário `compare`).
+**não tinha efeito nenhum** no PNG gerado (byte a byte idêntico com e sem a
+flag) — o fontconfig/`resvg` deste ambiente preferia a Nimbus Roman já
+registrada no sistema para a família genérica "Times, serif", independente
+de quais arquivos eram carregados via `--font`.
+
+**Resolvido em D01-2** (`docs/plano/D01-2-controle-de-fonte-na-comparacao.md`)
+com a flag `--pin-serif-family <NOME>`, que chama `fontdb.set_serif_family()`
+— troca pra qual família o genérico CSS `serif` resolve, independente do que
+o SO tem instalado. `compare-page.sh`/`compare-corpus.sh` já carregam os 3
+`.ttf` de D01 via `--font` e passam `--pin-serif-family "Liberation Serif"`
+na chamada de `svg-to-png` que renderiza a partir de uma partitura. Efeito
+confirmado (PNG muda 0,4977% dos pixels a tolerância 0 com a flag, contra
+zero sem ela) e visualmente (negrito/itálico saem na face certa da
+Liberation Serif de verdade, não mais Nimbus Roman). Isso por si só ainda
+não elimina toda divergência de texto comum — resta a pegadinha de
+`<title>` aninhado acima, ortogonal à fonte — mas isola o efeito de "fonte
+fisicamente diferente" da conta.
