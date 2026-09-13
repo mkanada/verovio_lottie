@@ -413,6 +413,7 @@ dependencies = [
  "dotlottie-rs",
  "image",
  "resvg",
+ "roxmltree 0.20.0",
  "tiny-skia",
  "usvg",
 ]

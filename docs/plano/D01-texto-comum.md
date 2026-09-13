@@ -384,6 +384,16 @@ fontconfig isolada para `compare`, e/ou contornar o bug de
 `text-anchor`+`<title>`) antes de tirar conclusões numéricas de futuras
 rodadas de `compare-corpus.sh` envolvendo texto comum.
 
+**Atualização:** as duas causas foram resolvidas — fonte física em
+[D01-2](D01-2-controle-de-fonte-na-comparacao.md) (`--pin-serif-family`) e
+o bug de `<title>` aninhado em
+[D01-3](D01-3-titulo-aninhado-resvg.md) (remoção do nó antes do `usvg`
+processar). Corpus final (`compare-corpus.sh 32`, ambas as correções
+aplicadas): 0,1002%–0,5997%, média 0,2977% — ainda não no nível de ruído
+puro de antialiasing (categoria 2 de `relatorio-paridade.md`), mas as duas
+causas conhecidas e não relacionadas ao exportador já foram isoladas e
+corrigidas do lado da ferramenta.
+
 **Tamanho do pacote** (10 peças do corpus, antes eram os números "sem
 texto" de A13):
 

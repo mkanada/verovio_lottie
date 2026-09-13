@@ -17,3 +17,4 @@ dotlottie-rs = { git = "https://github.com/LottieFiles/dotlottie-rs", features =
     "tvg-otf",
     "tvg-png",
 ] }
+roxmltree = "0.20"

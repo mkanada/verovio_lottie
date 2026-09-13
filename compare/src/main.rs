@@ -162,6 +162,32 @@ fn main() -> Result<()> {
     }
 }
 
+/// Remove todo nó `<title>` do SVG antes do usvg processar — o resvg 0.48
+/// inclui erroneamente o texto de `<title>` aninhado ao medir a largura
+/// para `text-anchor`, mesmo esse elemento nunca sendo desenhado (ver
+/// docs/plano/D01-3-titulo-aninhado-resvg.md). Se o SVG não for XML válido,
+/// devolve o texto original inalterado (deixa `usvg` reportar o erro).
+fn strip_title_elements(svg: &str) -> String {
+    let Ok(doc) = roxmltree::Document::parse(svg) else {
+        return svg.to_string();
+    };
+    let mut ranges: Vec<_> = doc
+        .descendants()
+        .filter(|n| n.has_tag_name("title"))
+        .map(|n| n.range())
+        .collect();
+    ranges.sort_by_key(|r| r.start);
+
+    let mut result = String::with_capacity(svg.len());
+    let mut last_end = 0;
+    for range in ranges {
+        result.push_str(&svg[last_end..range.start]);
+        last_end = range.end;
+    }
+    result.push_str(&svg[last_end..]);
+    result
+}
+
 fn svg_to_png(
     input: &Path,
     output: &Path,
@@ -170,6 +196,12 @@ fn svg_to_png(
 ) -> Result<()> {
     let svg_data =
         std::fs::read(input).with_context(|| format!("lendo {}", input.display()))?;
+    let svg_text = String::from_utf8(svg_data)
+        .with_context(|| format!("SVG não é UTF-8 válido: {}", input.display()))?;
+    // O resvg 0.48 mede erroneamente o texto de `<title>` aninhado ao resolver
+    // `text-anchor` (elemento nunca desenhado por nenhum renderizador conforme
+    // a spec) — ver docs/plano/D01-3-titulo-aninhado-resvg.md.
+    let svg_text = strip_title_elements(&svg_text);
 
     let mut opt = usvg::Options {
         resources_dir: input
@@ -197,7 +229,7 @@ fn svg_to_png(
         opt.fontdb_mut().set_serif_family(family);
     }
 
-    let tree = usvg::Tree::from_data(&svg_data, &opt)
+    let tree = usvg::Tree::from_data(svg_text.as_bytes(), &opt)
         .with_context(|| format!("interpretando SVG {}", input.display()))?;
 
     let size = tree.size().to_int_size();

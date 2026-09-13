@@ -120,8 +120,8 @@ próprio exemplo oficial da lib (`examples/simple_player.rs`, que usa `let _ =
 player.set_frame(...)`). Se você mexer nesse código, não troque os avisos por
 `?`/`.unwrap()` sem reler esta seção.
 
-## Pegadinha do `resvg`: texto comum centralizado/à direita com `<title>`
-## aninhado mede a largura errado (achado em D01)
+## Pegadinha do `resvg` (resolvida em D01-3): texto comum centralizado/à
+## direita com `<title>` aninhado media a largura errado (achado em D01)
 
 Descoberta ao validar `docs/plano/D01-texto-comum.md` (texto comum embutido
 no Lottie): o SVG do Verovio marca elementos com `@label` (títulos de
@@ -129,25 +129,33 @@ página, nome do compositor, etc.) assim —
 `<tspan x=".." text-anchor="middle|end"><title class="labelAttr">rótulo</title>
 <tspan>...texto de verdade...</tspan></tspan>` — e o `resvg` (via
 `svg-to-png`), ao medir a largura do texto para aplicar o `text-anchor`,
-**inclui erroneamente o `<title>` aninhado na medição**, produzindo uma
+**incluía erroneamente o `<title>` aninhado na medição**, produzindo uma
 largura muito maior que a real e jogando a maior parte do texto pra fora da
-página (cortado à esquerda, no caso de `middle`/`end`). Reproduzido de forma
-isolada e mínima (com e sem o `<title>` aninhado, mesmo `text-anchor`) —
-não é um bug de posicionamento do exportador dotLottie: o `.lottie` gerado
-está corretamente centralizado/alinhado à direita na mesma coordenada `x`
-que o próprio SVG declara; é o PNG de *referência* que sai errado para
-esse elemento específico.
+página (cortado à esquerda, no caso de `middle`/`end`). Não era um bug de
+posicionamento do exportador dotLottie: o `.lottie` gerado sempre esteve
+corretamente centralizado/alinhado à direita na mesma coordenada `x` que o
+próprio SVG declara; era o PNG de *referência* que saía errado para esse
+elemento específico.
 
-Efeito prático: qualquer `compare diff`/`compare-page.sh`/`compare-corpus.sh`
-envolvendo texto comum centralizado ou alinhado à direita com `@label`
-(basicamente todo título de página e nome de compositor do corpus) vai
-mostrar uma divergência grande e enganosa ali, mesmo quando o Lottie está
-visualmente correto — teve impacto mensurável real no corpus completo em
-D01 (ver "Notas de execução" daquele passo). Ainda **sem workaround**
-implementado aqui; se for preciso medir esse texto com precisão no futuro,
-os caminhos mais óbvios são (a) contornar o bug pré-processando o SVG antes
-do `svg-to-png` (remover o `<title>` aninhado desses `tspan`s), ou
-(b) investigar/reportar o bug no próprio `resvg`.
+Efeito prático (antes da correção): qualquer `compare diff`/
+`compare-page.sh`/`compare-corpus.sh` envolvendo texto comum centralizado
+ou alinhado à direita com `@label` mostrava uma divergência grande e
+enganosa ali, mesmo quando o Lottie estava visualmente correto — teve
+impacto mensurável real no corpus completo em D01 (ver "Notas de execução"
+daquele passo).
+
+**Resolvido em D01-3**
+(`docs/plano/D01-3-titulo-aninhado-resvg.md`) removendo todo nó `<title>`
+do SVG (via `roxmltree`, por range de bytes) **antes** de
+`usvg::Tree::from_data` — `<title>` nunca é desenhado por nenhum
+renderizador conforme a spec, então a remoção não muda nada visualmente,
+só corrige a medição de largura do `resvg`. Sempre ativo em
+`svg-to-png`, sem flag nova. Efeito medido: corpus caiu de
+0,1002%–0,6646%/média 0,3154% (D01-2) para 0,1002%–0,5997%/média 0,2977%
+— melhoria concentrada exatamente nas páginas com `@label` no cabeçalho
+(p.1 das 5 peças de `corpus/mei`; as de `corpus/musicxml` não têm `@label`
+no cabeçalho e ficaram byte a byte iguais, sem regressão em nenhuma
+página).
 
 ## Pegadinha adicional (resolvida em D01-2): `--font` sozinho não força o
 ## `resvg` a trocar a fonte de "Times, serif"
