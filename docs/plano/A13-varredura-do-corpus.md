@@ -46,4 +46,30 @@ Corrigir divergências (viram passos D).
 
 ## Notas de execução
 
-_(preencher ao executar)_
+- `compare/scripts/compare-corpus.sh [tolerância]` criado seguindo o padrão
+  de `compare-page.sh`: para cada arquivo de `corpus/mei`/`corpus/musicxml`,
+  gera SVG de todas as páginas (`-t svg -a`) e o pacote `-t dotlottie`, e por
+  página faz `svg-to-png` (com as fontes do Verovio), `lottie-to-png --frame
+  N-1` e `diff --tolerance 32`. Saídas em `compare/out/corpus/<peça>/` +
+  `resultado.csv` (peça, página, % divergente, pixels) + `tamanhos.txt`.
+- **Pegadinha nova (mesma raiz da já documentada em `compare-page.sh`)**:
+  usar o diretório de trabalho por peça (nome vindo do arquivo de entrada,
+  com pontos para `.mxl` como `Chopin_-_Nocturne_Op._9_No._1`) como prefixo
+  do `-o` do verovio corrompe o nome de saída, porque o `RemoveExtension`
+  trunca a partir do **último ponto do caminho inteiro**, não só da extensão
+  do arquivo — pontos no nome do diretório contam. Corrigido gerando sempre
+  num prefixo fixo sem pontos (`compare/out/corpus/_compare-corpus-tmp`) e
+  só movendo pro nome final depois, via `mv` do script.
+- Rodado nas 34 páginas (5 MEI + 5 MusicXML, contagem batendo com a tabela
+  do enunciado) sem crash, `Unable to write` ou warning de asserção.
+  Relatório em `docs/plano/relatorio-paridade.md`: divergência por página
+  entre 0,11% e 0,77% (média 0,33%), toda explicada por duas categorias —
+  texto comum ausente (dominante, esperado, D-TEXTO/B03) e ruído de
+  antialiasing no canal alfa em traços finos/curvas (acolada, ties, slurs,
+  linha de pedal) causado pelo próprio `compare diff` incluir alfa no
+  `channel_diff`, não por divergência geométrica real (confirmado por
+  amostragem de pixel: RGB idêntico, alfa diferente na borda). Nenhuma
+  divergência estrutural (posição, forma, cor, rotação) encontrada.
+- Tamanho dos `.lottie`: 77 KB (Gymnopédie, 2 páginas) a 430 KB (Nocturne, 7
+  páginas), ~40-83 KB/página — não alarmante ainda, mas o corpus é pequeno e
+  texto comum nem está sendo desenhado; reavaliar nas fases C/D.

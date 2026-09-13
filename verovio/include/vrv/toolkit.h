@@ -395,6 +395,23 @@ public:
     bool RenderToLottieFile(const std::string &filename, int pageNo = 1);
 
     /**
+     * Render all the pages to a single Lottie animation JSON, one layer per page.
+     *
+     * @return The Lottie animation JSON as a string
+     */
+    std::string RenderToLottieAnimation();
+
+    /**
+     * Render all the pages and save them as a dotLottie (.lottie) package.
+     *
+     * @remark nojs
+     *
+     * @param filename The output filename
+     * @return True if the file was successfully written
+     */
+    bool RenderToDotLottieFile(const std::string &filename);
+
+    /**
      * Render the document to MIDI.
      *
      * @return A MIDI file as a base64 encoded string

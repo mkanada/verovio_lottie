@@ -199,11 +199,11 @@ Decisões **já tomadas** (não reabrir): ver "Decisões arquiteturais já tomad
 | [A06](A06-primitivas-retas-e-cores.md) | Linhas, polígonos, retângulos, elipses e cores | A05 | — | concluído |
 | [A07](A07-curvas-bezier.md) | Curvas Bézier (ligaduras, beams curvos) | A06 | — | concluído |
 | [A08](A08-parser-de-path-dos-glifos.md) | Parser de path SVG dos glifos | A02 | — | concluído |
-| [A09](A09-draw-music-text.md) | `DrawMusicText` (glifos SMuFL) | A06, A08 | — | pendente |
-| [A10](A10-texto-smufl.md) | Texto: fontes SMuFL via glifos; texto comum contabilizado | A09 | — | pendente |
-| [A11](A11-zip-writer.md) | `ZipFileWriter` | A01 | — | pendente |
-| [A12](A12-pacote-dotlottie-multipagina.md) | Pacote `.lottie` com todas as páginas + CLI `dotlottie` | A10, A11 | D-CLI | pendente |
-| [A13](A13-varredura-do-corpus.md) | Varredura do corpus e relatório de paridade | A12 | — | pendente |
+| [A09](A09-draw-music-text.md) | `DrawMusicText` (glifos SMuFL) | A06, A08 | — | concluído |
+| [A10](A10-texto-smufl.md) | Texto: fontes SMuFL via glifos; texto comum contabilizado | A09 | — | concluído |
+| [A11](A11-zip-writer.md) | `ZipFileWriter` | A01 | — | concluído |
+| [A12](A12-pacote-dotlottie-multipagina.md) | Pacote `.lottie` com todas as páginas + CLI `dotlottie` | A10, A11 | D-CLI | concluído |
+| [A13](A13-varredura-do-corpus.md) | Varredura do corpus e relatório de paridade | A12 | — | concluído |
 | [B01](B01-spike-state-machine.md) | Spike: state machine com eventos por `xml:id` | A05 | — | pendente |
 | [B02](B02-memorando-mecanismo-de-destaque.md) | Memorando: mecanismo de destaque e virada | B01 | produz D-DESTAQUE | pendente |
 | [B03](B03-memorando-texto.md) | Memorando: texto comum | A13 | produz D-TEXTO | pendente |

@@ -1719,6 +1719,12 @@ bool Toolkit::RenderToDeviceContext(int pageNo, DeviceContext *deviceContext)
     deviceContext->SetWidth(width);
     deviceContext->SetHeight(height);
     deviceContext->SetViewBoxFactor(m_view.GetPPUFactor());
+    // Reset the logical origin before drawing. View::DrawCurrentPage() offsets it by the page
+    // margins relative to whatever it currently is (Point origin = dc->GetLogicalOrigin(); ...),
+    // which is fine for a fresh single-page DeviceContext (origin starts at 0,0) but would
+    // accumulate incorrectly if the same DeviceContext is reused across several pages, as
+    // Toolkit::RenderToLottieAnimation() does.
+    deviceContext->SetLogicalOrigin(0, 0);
 
     if (m_doc.IsFacs()) {
         deviceContext->SetWidth(m_doc.GetFacsimile()->GetMaxX());
@@ -1815,6 +1821,41 @@ bool Toolkit::RenderToSVGFile(const std::string &filename, int pageNo)
     outfile << output;
     outfile.close();
     return true;
+}
+
+std::string Toolkit::RenderToLottieAnimation()
+{
+    this->ResetLogBuffer();
+
+    LottieDeviceContext lottie;
+    lottie.SetResources(&m_doc.GetResources());
+
+    for (int p = 1; p <= this->GetPageCount(); ++p) {
+        if (!this->RenderToDeviceContext(p, &lottie)) return "";
+    }
+
+    std::vector<const LottiePage *> pages;
+    for (const LottiePage &page : lottie.GetPages()) {
+        pages.push_back(&page);
+    }
+
+    return LottieWriter::WriteAnimation(pages, "score");
+}
+
+bool Toolkit::RenderToDotLottieFile(const std::string &filename)
+{
+    this->ResetLogBuffer();
+
+    std::string animation = this->RenderToLottieAnimation();
+    if (animation.empty()) return false;
+
+    ZipFileWriter zip;
+    zip.AddFile("manifest.json",
+        "{\"version\":\"2\",\"generator\":\"Verovio " + this->GetVersion()
+            + " (verovio_lottie)\",\"animations\":[{\"id\":\"score\"}],\"initial\":{\"animation\":\"score\"}}");
+    zip.AddFile("a/score.json", animation);
+
+    return zip.Save(filename);
 }
 
 std::string Toolkit::RenderToLottie(int pageNo)

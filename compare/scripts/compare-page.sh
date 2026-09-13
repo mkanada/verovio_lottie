@@ -41,7 +41,43 @@ mkdir -p "$OUT_DIR"
 
 BASENAME="$(basename "$INPUT_FILE")"
 NAME="${BASENAME%.*}"
+EXT="${BASENAME##*.}"
 PREFIX="$OUT_DIR/${NAME}-p${PAGE}"
+
+if [[ "$EXT" == "lottie" ]]; then
+    # O arquivo já é um pacote dotLottie pronto (ex.: gerado com `-t dotlottie`
+    # para a música inteira). Não há partitura de origem aqui, então não dá
+    # pra (re)gerar o SVG — reaproveita o PNG do SVG já gerado por uma
+    # execução anterior deste script sobre o arquivo de partitura original
+    # (mesmo prefixo, já que NAME ignora a extensão) e só extrai a página
+    # pedida do pacote, no frame N-1 (uma página por frame, ver LottieWriter).
+    if [[ ! -f "$PREFIX-svg.png" ]]; then
+        echo "PNG do SVG não encontrado em $PREFIX-svg.png." >&2
+        echo "Rode antes: $0 <arquivo-de-partitura-original> $PAGE [tolerância]" >&2
+        exit 1
+    fi
+
+    echo "==> Lendo dimensões do PNG do SVG existente"
+    read -r WIDTH HEIGHT < <(python3 - "$PREFIX-svg.png" <<'PYEOF'
+import struct
+import sys
+
+with open(sys.argv[1], "rb") as f:
+    header = f.read(24)
+width, height = struct.unpack(">II", header[16:24])
+print(width, height)
+PYEOF
+)
+
+    FRAME=$((PAGE - 1))
+    echo "==> Lottie -> PNG (pacote dotLottie existente, frame $FRAME, ${WIDTH}x${HEIGHT})"
+    "$COMPARE_BIN" lottie-to-png "$INPUT_FILE" "$PREFIX-lottie.png" --width "$WIDTH" --height "$HEIGHT" --frame "$FRAME"
+
+    echo "==> Diff (tolerância $TOLERANCE)"
+    "$COMPARE_BIN" diff "$PREFIX-svg.png" "$PREFIX-lottie.png" "$PREFIX-diff.png" --tolerance "$TOLERANCE"
+
+    exit 0
+fi
 
 # Renderiza com um prefixo sem pontos: o `-o` do verovio trunca tudo a partir
 # do último "." do caminho (RemoveExtension em tools/main.cpp), o que
