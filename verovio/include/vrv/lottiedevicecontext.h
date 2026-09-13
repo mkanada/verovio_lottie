@@ -162,6 +162,25 @@ private:
      */
     void AddShape(LottieShape &&shape);
 
+    /**
+     * Build a filled/stroked Path shape for one glyph, positioned at (x, y) and scaled per
+     * the current font, exactly as SvgDeviceContext::DrawMusicText positions its <use>
+     * elements. Shared by DrawMusicText and the SMuFL-font branch of DrawText.
+     */
+    LottieShape MakeGlyphShape(const Glyph *glyph, const FontInfo *font, int x, int y);
+
+    /**
+     * Horizontal advance for one glyph, replicating the exact integer arithmetic of
+     * SvgDeviceContext::DrawMusicText so glyph spacing stays pixel-identical to the SVG.
+     */
+    int GetGlyphAdvance(const Glyph *glyph, const FontInfo *font);
+
+    /**
+     * Apply the pending text chunk's alignment offset (0 / -width/2 / -width) and insert its
+     * pending SMuFL glyph shapes into the current node.
+     */
+    void FinalizeTextChunk();
+
 private:
     int m_originX = 0;
     int m_originY = 0;
@@ -169,6 +188,29 @@ private:
     std::vector<LottiePage> m_pages;
     std::vector<LottieNode *> m_nodeStack;
     std::map<std::string, LottieNode *> m_idMap;
+
+    /**
+     * Cache of parsed glyph outlines (in glyph units), keyed by Glyph pointer since glyphs
+     * live for the lifetime of the Resources object and are never mutated after loading.
+     */
+    std::map<const Glyph *, std::vector<LottieBezier>> m_glyphCache;
+
+    /**
+     * State for the text chunk model described in docs/plano/A10-texto-smufl.md: the pen
+     * position, the alignment of the current anchored chunk, its accumulated glyph width (for
+     * the alignment offset applied on finalization), and its pending SMuFL glyph shapes.
+     */
+    int m_textPenX = 0;
+    int m_textPenY = 0;
+    data_HORIZONTALALIGNMENT m_textAlignment = HORIZONTALALIGNMENT_left;
+    double m_textChunkWidth = 0.0;
+    std::vector<LottieShape> m_textChunkShapes;
+
+    /**
+     * Count of non-SMuFL text runs skipped by DrawText (pending D-TEXTO), reported and reset
+     * in EndPage.
+     */
+    unsigned int m_skippedTextRuns = 0;
 };
 
 } // namespace vrv

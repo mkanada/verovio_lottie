@@ -15,7 +15,10 @@
 //----------------------------------------------------------------------------
 
 #include "atts_shared.h"
+#include "glyph.h"
 #include "object.h"
+#include "svgpathparser.h"
+#include "vrv.h"
 
 //----------------------------------------------------------------------------
 
@@ -379,12 +382,144 @@ void LottieDeviceContext::DrawRoundedRectangle(int x, int y, int width, int heig
     this->AddShape(std::move(shape));
 }
 
+LottieShape LottieDeviceContext::MakeGlyphShape(const Glyph *glyph, const FontInfo *font, int x, int y)
+{
+    assert(glyph);
+    assert(font);
+
+    std::map<const Glyph *, std::vector<LottieBezier>>::iterator cacheIt = m_glyphCache.find(glyph);
+    if (cacheIt == m_glyphCache.end()) {
+        std::vector<LottieBezier> parsedPaths;
+        ParseGlyphXml(glyph->GetXML(), parsedPaths);
+        cacheIt = m_glyphCache.emplace(glyph, std::move(parsedPaths)).first;
+    }
+
+    double scaleX = (double)font->GetPointSize() / glyph->GetUnitsPerEm() * DEFINITION_FACTOR;
+    double scaleY = scaleX;
+    if (font->GetWidthToHeightRatio() != 1.0f) scaleX *= font->GetWidthToHeightRatio();
+
+    LottieShape shape;
+    shape.paths.reserve(cacheIt->second.size());
+    for (const LottieBezier &glyphPath : cacheIt->second) {
+        LottieBezier path;
+        path.closed = glyphPath.closed;
+        const std::size_t count = glyphPath.v.size();
+        path.v.reserve(count);
+        path.i.reserve(count);
+        path.o.reserve(count);
+        for (std::size_t idx = 0; idx < count; ++idx) {
+            path.v.push_back(LottieVec{ x + scaleX * glyphPath.v[idx].x, y + scaleY * glyphPath.v[idx].y });
+            path.i.push_back(LottieVec{ scaleX * glyphPath.i[idx].x, scaleY * glyphPath.i[idx].y });
+            path.o.push_back(LottieVec{ scaleX * glyphPath.o[idx].x, scaleY * glyphPath.o[idx].y });
+        }
+        shape.paths.push_back(std::move(path));
+    }
+
+    // Fill and stroke both inherited (CSS "path {stroke:currentColor}" plus the ancestor
+    // group's "fill" attribute, same as every other glyph-less shape's COLOR_NONE).
+    // Stroke width mirrors the SVG default (1, in glyph units) scaled like the geometry.
+    shape.hasFill = true;
+    shape.hasStroke = true;
+    shape.strokeWidth = scaleY;
+
+    return shape;
+}
+
+int LottieDeviceContext::GetGlyphAdvance(const Glyph *glyph, const FontInfo *font)
+{
+    assert(glyph);
+    assert(font);
+
+    // Exact same integer arithmetic as SvgDeviceContext::DrawMusicText, to keep advance
+    // widths pixel-identical between the two outputs.
+    if (glyph->GetHorizAdvX() > 0) {
+        return glyph->GetHorizAdvX() * font->GetPointSize() / glyph->GetUnitsPerEm();
+    }
+    int gx, gy, w, h;
+    glyph->GetBoundingBox(gx, gy, w, h);
+    return w * font->GetPointSize() / glyph->GetUnitsPerEm();
+}
+
 void LottieDeviceContext::DrawText(
     const std::string &text, const std::u32string &wtext, int x, int y, int width, int height)
 {
+    assert(!m_fontStack.empty());
+    FontInfo *font = m_fontStack.top();
+
+    // Mirrors SvgDeviceContext::DrawText L1163-1166: an explicit x/y without width/height moves
+    // the pen without starting a new anchored chunk (e.g. DrawLyricString positioning a
+    // syllable). The width/height-only case (invisible sylTextRect) is not visual and is
+    // skipped entirely, without moving the pen, exactly like the SVG in that branch.
+    const bool hasPosition = (x != 0) && (y != 0) && (x != VRV_UNSET) && (y != VRV_UNSET);
+    const bool hasSize = (width != 0) && (height != 0) && (width != VRV_UNSET) && (height != VRV_UNSET);
+    if (hasPosition && !hasSize) {
+        m_textPenX = x;
+        m_textPenY = y;
+    }
+
+    std::u32string chars = wtext;
+    if (chars.empty() && !text.empty()) {
+        chars.assign(text.begin(), text.end());
+    }
+    if (chars.empty()) return;
+
+    const int letterSpacing = font->GetLetterSpacing();
+
+    if (font->GetSmuflFont() != SMUFL_NONE) {
+        const Resources *resources = this->GetResources();
+        assert(resources);
+
+        bool first = true;
+        for (char32_t c : chars) {
+            // Letter-spacing is a per-run CSS property in the SVG (set on the <tspan>), so it
+            // is applied between characters of this call only, not carried over from a
+            // previous DrawText call in the same chunk.
+            if (!first && letterSpacing != 0) {
+                m_textPenX += letterSpacing;
+                m_textChunkWidth += letterSpacing;
+            }
+            first = false;
+
+            const Glyph *glyph = resources->GetGlyph(c);
+            if (!glyph) continue;
+
+            m_textChunkShapes.push_back(this->MakeGlyphShape(glyph, font, m_textPenX, m_textPenY));
+
+            const int advance = this->GetGlyphAdvance(glyph, font);
+            m_textPenX += advance;
+            m_textChunkWidth += advance;
+        }
+    }
+    else {
+        // Common (non-SMuFL) text is not rendered until D-TEXTO; only advance the pen so
+        // subsequent SMuFL runs in the same chunk (e.g. a dynamic mixing letters and glyphs)
+        // stay correctly positioned, and count the skipped run for the EndPage warning.
+        TextExtend extend;
+        this->GetTextExtent(chars, &extend, true);
+        m_textPenX += extend.m_width;
+        m_textChunkWidth += extend.m_width;
+        ++m_skippedTextRuns;
+    }
 }
 
-void LottieDeviceContext::DrawMusicText(const std::u32string &text, int x, int y, bool setSmuflGlyph) {}
+void LottieDeviceContext::DrawMusicText(const std::u32string &text, int x, int y, bool setSmuflGlyph)
+{
+    assert(!m_fontStack.empty());
+    FontInfo *font = m_fontStack.top();
+
+    const Resources *resources = this->GetResources();
+    assert(resources);
+
+    for (char32_t c : text) {
+        const Glyph *glyph = resources->GetGlyph(c);
+        if (!glyph) {
+            continue;
+        }
+
+        this->AddShape(this->MakeGlyphShape(glyph, font, x, y));
+        x += this->GetGlyphAdvance(glyph, font);
+    }
+}
 
 void LottieDeviceContext::DrawSpline(int n, Point points[]) {}
 
@@ -394,13 +529,68 @@ void LottieDeviceContext::DrawSvgShape(int x, int y, int width, int height, doub
 
 void LottieDeviceContext::DrawBackgroundImage(int x, int y) {}
 
-void LottieDeviceContext::StartText(int x, int y, data_HORIZONTALALIGNMENT alignment) {}
+void LottieDeviceContext::StartText(int x, int y, data_HORIZONTALALIGNMENT alignment)
+{
+    m_textPenX = x;
+    m_textPenY = y;
+    m_textAlignment = alignment;
+    m_textChunkShapes.clear();
+    m_textChunkWidth = 0.0;
+}
 
-void LottieDeviceContext::EndText() {}
+void LottieDeviceContext::EndText()
+{
+    this->FinalizeTextChunk();
+}
 
-void LottieDeviceContext::MoveTextTo(int x, int y, data_HORIZONTALALIGNMENT alignment) {}
+void LottieDeviceContext::MoveTextTo(int x, int y, data_HORIZONTALALIGNMENT alignment)
+{
+    // In the SVG, an absolute x/y starts a new anchored text chunk (finalize the pending one
+    // before moving the pen). An HORIZONTALALIGNMENT_NONE here (e.g. explicit repositioning
+    // after an <lb/>) means the SVG only sets x/y and keeps the current text-anchor, so keep
+    // the current alignment rather than resetting it.
+    this->FinalizeTextChunk();
+    m_textPenX = x;
+    m_textPenY = y;
+    if (alignment != HORIZONTALALIGNMENT_NONE) {
+        m_textAlignment = alignment;
+    }
+}
 
-void LottieDeviceContext::MoveTextVerticallyTo(int y) {}
+void LottieDeviceContext::MoveTextVerticallyTo(int y)
+{
+    m_textPenY = y;
+}
+
+void LottieDeviceContext::FinalizeTextChunk()
+{
+    if (m_textChunkShapes.empty()) {
+        m_textChunkWidth = 0.0;
+        return;
+    }
+
+    double offset = 0.0;
+    if (m_textAlignment == HORIZONTALALIGNMENT_center) {
+        offset = -m_textChunkWidth / 2.0;
+    }
+    else if (m_textAlignment == HORIZONTALALIGNMENT_right) {
+        offset = -m_textChunkWidth;
+    }
+
+    for (LottieShape &shape : m_textChunkShapes) {
+        if (offset != 0.0) {
+            for (LottieBezier &path : shape.paths) {
+                for (LottieVec &vertex : path.v) {
+                    vertex.x += offset;
+                }
+            }
+        }
+        this->AddShape(std::move(shape));
+    }
+
+    m_textChunkShapes.clear();
+    m_textChunkWidth = 0.0;
+}
 
 void LottieDeviceContext::StartGraphic(
     Object *object, const std::string &gClass, const std::string &gId, GraphicID graphicID, bool prepend)
@@ -551,6 +741,12 @@ void LottieDeviceContext::EndPage()
 {
     assert(m_nodeStack.size() == 1);
     m_nodeStack.clear();
+
+    if (m_skippedTextRuns > 0) {
+        LogWarning(
+            "LottieDeviceContext: %u common text run(s) not rendered (pending D-TEXTO)", m_skippedTextRuns);
+        m_skippedTextRuns = 0;
+    }
 }
 
 void LottieDeviceContext::AddShape(LottieShape &&shape)

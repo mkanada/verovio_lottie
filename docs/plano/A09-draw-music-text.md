@@ -57,4 +57,40 @@ Texto (A10).
 
 ## Notas de execução
 
-_(preencher ao executar)_
+- Implementado em `lottiedevicecontext.cpp`/`.h`. Cache
+  `m_glyphCache: std::map<const Glyph *, std::vector<LottieBezier>>` no DC,
+  populado com `ParseGlyphXml` (já pronto desde A08) na primeira ocorrência
+  de cada glifo; iterações seguintes reusam os subpaths em unidades de
+  glifo, sem reparsear o XML.
+- Escala/avanço horizontal copiados exatamente como no plano
+  (`SvgDeviceContext::DrawMusicText` L1174-L1215): `sx`/`sy` a partir de
+  `GetPointSize()/GetUnitsPerEm()*DEFINITION_FACTOR`, `sx *= ratio` quando
+  `GetWidthToHeightRatio() != 1.0f`, e o avanço com a mesma aritmética
+  inteira (`HorizAdvX` ou `GetBoundingBox` como fallback) — importante para
+  não introduzir deriva de espaçamento entre glifos consecutivos.
+- Fill e stroke do `LottieShape` do glifo ficam herdados (`hasFill`/
+  `hasStroke = true`, cores em `COLOR_NONE`), reproduzindo a mesma cadeia de
+  herança de cor já usada por `LottieNode::colorCss`/`ResolveColor` (CSS
+  `path {stroke:currentColor}` + atributo `fill` herdado do grupo ancestral,
+  atribuído em `SvgDeviceContext::StartGraphic` L317-318). `strokeWidth = sy`
+  (largura 1 em unidades de glifo, escalada) — sem `ApplyStrokeFromPen`
+  porque não há Pen/Brush envolvidos no desenho de texto musical.
+- `setSmuflGlyph` ignorado, como previsto (só afeta BBox, fora de escopo
+  aqui).
+- Build limpa (`make -j4` em `verovio/tools`, sem warnings novos).
+- Critérios de aceite verificados com `compare/scripts/compare-page.sh`:
+  - Grieg *Little Bird* Op.43 No.4 p.1: 0,20% de diff (era ~3-4% antes).
+  - Chopin Étude Op.10 No.9 p.1: 0,48% de diff.
+  - Debussy *Clair de Lune* p.1: 0,77% de diff.
+  Nos três, os glifos (claves, cabeças de nota, acidentes, pausas, fórmula
+  de compasso, articulações) aparecem e coincidem pixel a pixel com o SVG;
+  o vermelho restante no diff é só texto (título, compositor, indicações de
+  andamento/dinâmica em texto, números de compasso/dedilhado) e antialiasing
+  de 1px em linhas/curvas já cobertas por A06/A07 — nada de glifo sobra em
+  vermelho.
+- Mínimas e semibreves conferidas visualmente (recorte do PNG do Lottie,
+  Clair de Lune): aparecem **vazadas** já com a regra padrão (`"r":1`,
+  nonzero) — não foi necessário usar evenodd. Os subpaths interno/externo da
+  cabeça vazada já vêm com sentidos de percurso opostos no dado SVG
+  original, então nonzero produz o furo sozinho; `WriteFill` não precisou de
+  mudança.
