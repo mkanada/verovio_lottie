@@ -11,10 +11,12 @@
 
 #include <algorithm>
 #include <cassert>
+#include <set>
 
 //----------------------------------------------------------------------------
 
 #include "atts_shared.h"
+#include "csscolor.h"
 #include "glyph.h"
 #include "object.h"
 #include "svgpathparser.h"
@@ -542,7 +544,137 @@ void LottieDeviceContext::DrawSpline(int n, Point points[]) {}
 
 void LottieDeviceContext::DrawGraphicUri(int x, int y, int width, int height, const std::string &uri) {}
 
-void LottieDeviceContext::DrawSvgShape(int x, int y, int width, int height, double scale, pugi::xml_node svg) {}
+namespace {
+
+    // Returns the CSS value of `property` for an embedded <svg> element: an inline "style"
+    // declaration takes precedence over the same-named presentation attribute, matching the CSS
+    // cascade. Returns an empty string if neither specifies it (distinct from an explicit "none").
+    std::string GetSvgProperty(const pugi::xml_node &node, const std::string &property)
+    {
+        pugi::xml_attribute style = node.attribute("style");
+        if (style) {
+            const std::string styleValue = style.value();
+            std::size_t pos = 0;
+            while (pos < styleValue.size()) {
+                const std::size_t sep = styleValue.find(';', pos);
+                const std::size_t declEnd = (sep == std::string::npos) ? styleValue.size() : sep;
+                const std::size_t colon = styleValue.find(':', pos);
+                if ((colon != std::string::npos) && (colon < declEnd)) {
+                    std::string key = styleValue.substr(pos, colon - pos);
+                    std::string value = styleValue.substr(colon + 1, declEnd - colon - 1);
+                    auto trim = [](std::string &s) {
+                        const std::size_t b = s.find_first_not_of(" \t\r\n");
+                        const std::size_t e = s.find_last_not_of(" \t\r\n");
+                        s = (b == std::string::npos) ? "" : s.substr(b, e - b + 1);
+                    };
+                    trim(key);
+                    trim(value);
+                    if (key == property) return value;
+                }
+                if (sep == std::string::npos) break;
+                pos = sep + 1;
+            }
+        }
+
+        pugi::xml_attribute attr = node.attribute(property.c_str());
+        return attr ? attr.value() : "";
+    }
+
+    // Collects the <path> descendants of an embedded <svg> element, transparently descending
+    // through bare <g> wrappers (no "transform" of their own) - the real-world shape of
+    // data/footer.svg (the "MEI engraved with Verovio" logo that Doc::GenerateFooter() inserts
+    // on every page), whose <path>s sit one <g> deep. MVP scope stops there: a <g transform=...>
+    // and any element other than <path>/<g> is warned about once per tag and skipped, degrading
+    // gracefully instead of aborting the page (same posture as A06/A10).
+    void CollectSvgPaths(const pugi::xml_node &node, std::vector<pugi::xml_node> &paths)
+    {
+        static std::set<std::string> warnedElements;
+        for (pugi::xml_node child : node.children()) {
+            const std::string tag = child.name();
+            if (tag == "path") {
+                paths.push_back(child);
+            }
+            else if (tag == "g") {
+                if (child.attribute("transform")) {
+                    if (warnedElements.insert("g[transform]").second) {
+                        LogWarning("LottieDeviceContext::DrawSvgShape: embedded <svg>'s <g transform=\"...\"> is "
+                                   "not supported, skipping its content.");
+                    }
+                    continue;
+                }
+                CollectSvgPaths(child, paths);
+            }
+            else if (warnedElements.insert(tag).second) {
+                LogWarning(
+                    "LottieDeviceContext::DrawSvgShape: unsupported embedded <svg> element '<%s>' ignored.",
+                    tag.c_str());
+            }
+        }
+    }
+
+} // namespace
+
+void LottieDeviceContext::DrawSvgShape(int x, int y, int width, int height, double scale, pugi::xml_node svg)
+{
+    std::vector<pugi::xml_node> pathNodes;
+    CollectSvgPaths(svg, pathNodes);
+
+    const double factor = scale * DEFINITION_FACTOR;
+
+    for (const pugi::xml_node &pathNode : pathNodes) {
+        pugi::xml_attribute dAttr = pathNode.attribute("d");
+        if (!dAttr) {
+            LogWarning("LottieDeviceContext::DrawSvgShape: <path> without a 'd' attribute ignored.");
+            continue;
+        }
+
+        std::vector<LottieBezier> parsedPaths;
+        if (!ParseSvgPathData(dAttr.value(), parsedPaths)) {
+            continue;
+        }
+
+        LottieShape shape;
+        shape.kind = LottieShapeKind::Path;
+        shape.paths.reserve(parsedPaths.size());
+        for (const LottieBezier &srcPath : parsedPaths) {
+            LottieBezier path;
+            path.closed = srcPath.closed;
+            const std::size_t count = srcPath.v.size();
+            path.v.reserve(count);
+            path.i.reserve(count);
+            path.o.reserve(count);
+            for (std::size_t idx = 0; idx < count; ++idx) {
+                path.v.push_back(LottieVec{ x + factor * srcPath.v[idx].x, y + factor * srcPath.v[idx].y });
+                path.i.push_back(LottieVec{ factor * srcPath.i[idx].x, factor * srcPath.i[idx].y });
+                path.o.push_back(LottieVec{ factor * srcPath.o[idx].x, factor * srcPath.o[idx].y });
+            }
+            shape.paths.push_back(std::move(path));
+        }
+
+        // Fill: no global CSS rule targets "fill" in Verovio's stylesheet (SvgDeviceContext's
+        // "#<id> path {stroke:currentColor}", see below, only ever sets stroke), so the path's
+        // own attribute/style value - explicit, absent, or "none" - is respected as written.
+        const std::string fillProperty = GetSvgProperty(pathNode, "fill");
+        shape.hasFill = (fillProperty != "none");
+        if (shape.hasFill) {
+            shape.fillColor = ResolveColor(fillProperty, COLOR_NONE);
+        }
+
+        // Stroke: confirmed empirically against the real SVG output (a standalone resvg
+        // cascade test, and the corpus footer) that Verovio's global "path {stroke:currentColor}"
+        // rule always overrides a <path>'s own "stroke" attribute or style, even an explicit
+        // "stroke: none" - CSS presentation attributes never outrank an author stylesheet rule,
+        // however low its specificity. So every embedded <path> ends up stroked with the
+        // inherited color regardless of what it says, exactly like every other primitive in the
+        // exporter (ApplyStrokeFromPen above) - only "stroke-width" still comes from the
+        // attribute, since no stylesheet rule sets that property.
+        shape.hasStroke = true;
+        pugi::xml_attribute strokeWidthAttr = pathNode.attribute("stroke-width");
+        shape.strokeWidth = (strokeWidthAttr ? strokeWidthAttr.as_double(1.0) : 1.0) * factor;
+
+        this->AddShape(std::move(shape));
+    }
+}
 
 void LottieDeviceContext::DrawBackgroundImage(int x, int y) {}
 
