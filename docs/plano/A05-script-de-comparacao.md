@@ -64,4 +64,36 @@ Varredura do corpus inteiro (A13); suporte a `.lottie` no script (A12).
 
 ## Notas de execução
 
-_(preencher ao executar)_
+- **`--font` implementado, mas dispensável no corpus atual**: verificado nos 5
+  MEI do corpus (página 1 de cada) que o SVG do Verovio **nunca** usa
+  `@font-face`/`font-family` de fonte musical — nenhum `@font-face` aparece no
+  SVG gerado, e o único `font-family` presente é `Times, serif` (texto comum:
+  títulos, indicações, letra). Dinâmicas e demais glifos SMuFL saem sempre
+  como `<use xlink:href="#...">` referenciando `<path>` vetorial em `<defs>`
+  (consistente com o que já constava no mapa do código do README do plano).
+  Por isso o critério de aceite "as dinâmicas mudam de forma com/sem
+  `--font`" **não se verifica**: rodei
+  `compare svg-to-png` no SVG da página 1 do `Chopin_Etude_Op10_No9.mei` com e
+  sem `--font` (as 4 fontes) e o diff pixel a pixel deu 0 pixels diferentes
+  (tolerância 32). A opção foi mantida mesmo assim (implementada exatamente
+  como pedido) por segurança/futuro — não custa nada e cobre o caso de algum
+  MEI vir a produzir texto solto com fonte SMuFL. Documentado em
+  `compare/README.md`.
+- **Truncamento de nome de saída do Verovio**: `tools/main.cpp`
+  (`RemoveExtension`) corta o `-o <caminho>` a partir do **último** `.` do
+  caminho inteiro — inclusive um `.` inicial de "dotfile". Isso quebraria
+  nomes de saída para entradas cujo nome já tem pontos (vários `.mxl` do
+  corpus, ex. `Chopin_-_Nocturne_Op._9_No._1.mxl`) e também quebrou uma
+  primeira tentativa de usar um prefixo temporário `.compare-page-tmp` (virou
+  `compare/out/.svg`, vazio). Corrigido usando um prefixo temporário sem
+  nenhum ponto (`_compare-page-tmp`) e renomeando para o nome final
+  (`<nome>-p<N>.svg`/`.json`) depois — assim o script funciona mesmo para
+  nomes de entrada com pontos, embora isso esteja fora do escopo de teste
+  deste passo (só corpus MEI, sem pontos no nome).
+- Critérios de aceite restantes confirmados: `cargo build --release` compila;
+  `compare/scripts/compare-page.sh corpus/mei/Grieg_Little_bird_Op43_No4.mei 1`
+  gera os 5 arquivos esperados em `compare/out/` (PNG do Lottie vazio/diff
+  grande, como esperado — ainda não há exportador dotLottie de verdade); rodei
+  também de fora do repositório (`cd /tmp && .../compare-page.sh <caminho
+  absoluto> 1`) para confirmar que o script funciona de qualquer diretório;
+  `git status` não mostra `compare/out/`.

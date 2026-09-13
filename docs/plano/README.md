@@ -195,7 +195,7 @@ Decisões **já tomadas** (não reabrir): ver "Decisões arquiteturais já tomad
 | [A02](A02-arvore-de-graficos.md) | Árvore interna (IR) de grupos e páginas | A01 | — | concluído |
 | [A03](A03-serializador-lottie-json.md) | Serializador `LottieWriter` | A02 | — | concluído |
 | [A04](A04-toolkit-e-cli-lottie-json.md) | `Toolkit::RenderToLottie` + CLI `lottie` | A03 | D-CLI | concluído |
-| [A05](A05-script-de-comparacao.md) | Script de comparação por página + fontes no `compare` | A04 | — | pendente |
+| [A05](A05-script-de-comparacao.md) | Script de comparação por página + fontes no `compare` | A04 | — | concluído |
 | [A06](A06-primitivas-retas-e-cores.md) | Linhas, polígonos, retângulos, elipses e cores | A05 | — | pendente |
 | [A07](A07-curvas-bezier.md) | Curvas Bézier (ligaduras, beams curvos) | A06 | — | pendente |
 | [A08](A08-parser-de-path-dos-glifos.md) | Parser de path SVG dos glifos | A02 | — | pendente |

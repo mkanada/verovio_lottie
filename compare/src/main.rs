@@ -24,6 +24,11 @@ enum Command {
     SvgToPng {
         input: PathBuf,
         output: PathBuf,
+        /// Arquivo de fonte adicional a carregar (repetível). Use para as fontes do
+        /// Verovio (ex.: Leipzig, Bravura) quando o SVG referencia glifos SMuFL via
+        /// `@font-face` — o resvg não carrega esse `@font-face` embutido sozinho.
+        #[arg(long = "font")]
+        fonts: Vec<PathBuf>,
     },
     /// Renderiza um frame de uma animação Lottie (.json) ou dotLottie (.lottie) para PNG.
     LottieToPng {
@@ -53,7 +58,7 @@ enum Command {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::SvgToPng { input, output } => svg_to_png(&input, &output),
+        Command::SvgToPng { input, output, fonts } => svg_to_png(&input, &output, &fonts),
         Command::LottieToPng {
             input,
             output,
@@ -70,7 +75,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn svg_to_png(input: &Path, output: &Path) -> Result<()> {
+fn svg_to_png(input: &Path, output: &Path, fonts: &[PathBuf]) -> Result<()> {
     let svg_data =
         std::fs::read(input).with_context(|| format!("lendo {}", input.display()))?;
 
@@ -84,6 +89,15 @@ fn svg_to_png(input: &Path, output: &Path) -> Result<()> {
     // O Verovio usa fontes vetorizadas em <defs>/<use>, mas carregamos as fontes
     // do sistema também para não falhar em SVGs com <text> (ex.: letra de música).
     opt.fontdb_mut().load_system_fonts();
+    // O SVG do Verovio referencia texto SMuFL (dinâmicas, ornamentos) via
+    // font-family embutido em @font-face (woff2); o resvg não carrega esse
+    // @font-face sozinho, então as fontes do Verovio precisam ser registradas
+    // explicitamente para uma comparação justa contra o Lottie renderizado.
+    for font in fonts {
+        opt.fontdb_mut()
+            .load_font_file(font)
+            .with_context(|| format!("carregando fonte {}", font.display()))?;
+    }
 
     let tree = usvg::Tree::from_data(&svg_data, &opt)
         .with_context(|| format!("interpretando SVG {}", input.display()))?;

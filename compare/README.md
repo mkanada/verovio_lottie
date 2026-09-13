@@ -52,6 +52,41 @@ vermelho) e imprime no terminal quantos pixels diferem e a maior diferença de
 canal observada. `--tolerance N` (0-255) permite ignorar diferenças pequenas
 de antialiasing.
 
+### 4. Script: comparar uma página inteira de uma vez
+
+```sh
+compare/scripts/compare-page.sh <arquivo> <página> [tolerância]
+```
+
+Funciona a partir de qualquer diretório (resolve a raiz do repositório pela
+própria localização do script). Faz os passos 1-3 acima de uma vez só —
+`verovio -t svg`, `verovio -t lottie`, `svg-to-png` (com as fontes do
+Verovio via `--font`, ver nota abaixo), lê a resolução do PNG do SVG para
+passar a `lottie-to-png`, e roda `diff` — e grava tudo em `compare/out/`
+(ignorado pelo git):
+
+```
+compare/out/<nome>-p<N>.svg
+compare/out/<nome>-p<N>.json
+compare/out/<nome>-p<N>-svg.png
+compare/out/<nome>-p<N>-lottie.png
+compare/out/<nome>-p<N>-diff.png
+```
+
+Exemplo: `compare/scripts/compare-page.sh corpus/mei/Grieg_Little_bird_Op43_No4.mei 1`.
+
+**Nota sobre `svg-to-png --font`**: a opção existe e funciona (`compare
+svg-to-png --font <arquivo.ttf/otf>` chama
+`fontdb_mut().load_font_file(...)`), mas, verificado no corpus inteiro, o SVG
+gerado pelo Verovio **não** usa `@font-face`/texto com `font-family` de fonte
+musical — os glifos SMuFL (dinâmicas, articulações etc.) sempre saem como
+`<use xlink:href="#...">` referenciando `<path>` vetorial em `<defs>`, nunca
+como `<text font-family="Leipzig">`. O único `font-family` que aparece é
+`Times, serif`, para texto comum (títulos, indicações, letra), que as fontes
+do sistema já cobrem. Ou seja: carregar as fontes do Verovio não muda nada na
+renderização do corpus atual — a opção fica disponível por segurança (caso
+algum MEI produza texto solto com fonte SMuFL), mas não é necessária hoje.
+
 ## Limitações atuais / decisões conhecidas
 
 - **Ainda não há exportador dotLottie no Verovio** — o subcomando
