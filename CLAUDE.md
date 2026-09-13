@@ -104,6 +104,26 @@ Trate estas decisões como fixas — não as reabra sem confirmar com o usuário
     via slots, + o engine separado de página) e compositar a posição de
     câmera de uma na renderização visível da outra — primeiro ponto de
     atenção prático ao implementar C00.
+- **Texto comum (decidido em B03, ver `docs/plano/decisoes/B03-texto.md`):**
+  fonte TTF embutida no pacote (T1) — **não** contornos assados
+  (`stb_truetype`), que era a recomendação inicial mas foi preterida pelo
+  usuário em favor da opção já validada por spike nesta sessão.
+  - Fonte: **Liberation Serif** (mesma família já usada pelo projeto via
+    `fontTextLiberation`, licença SIL OFL), vendorizada como `.ttf` de
+    verdade em `verovio/` (hoje só existe embutida em woff2 dentro de
+    `verovio/data/Liberation.css`).
+  - Estilos cobertos: **Regular + Italic + Bold** (decisão explícita do
+    usuário, mesmo sabendo do custo de tamanho — ver abaixo). Bold Italic
+    **não** está coberto.
+  - Mecanismo: camada de texto nativa do Lottie (`ty:5` + `fonts.list` com
+    `origin:3`), confirmada funcionando no `dotlottie-rs`/ThorVG por spike
+    real nesta sessão (não só leitura de código).
+  - Custo de tamanho aceito conscientemente: ~208-220 KB comprimidos por
+    estilo de fonte embutido (medido no spike), ~600-650 KB fixos por peça
+    com os três estilos — acima da maioria dos pacotes do corpus hoje
+    (77-430 KB, ver `docs/plano/relatorio-paridade.md`, medido **sem**
+    texto comum ainda). Atenção especial ao implementar D01 se isso virar
+    problema real em produção.
 
 ## O que ainda está em aberto (não decida sozinho, pesquise/pergunte)
 

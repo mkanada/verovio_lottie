@@ -47,4 +47,14 @@ Pare para a decisão; depois, detalhe D01 (ver D00).
 
 ## Notas de execução
 
-_(preencher ao executar)_
+- Memorando produzido em `docs/plano/decisoes/B03-texto.md`, com spike de T1
+  executado de verdade (não só leitura de código): `.lottie` feito à mão com
+  camada de texto + `LiberationSerif-Regular.ttf` embutido renderiza
+  corretamente via `compare lottie-to-png` no `dotlottie-rs`/ThorVG,
+  diacríticos incluídos.
+- Recomendação: **T2** (contornos via `stb_truetype`, reaproveitando o
+  pipeline de `MakeGlyphShape`/`LottieBezier` já usado para SMuFL), com T1
+  como alternativa defensável mas de custo de tamanho medido maior (~208
+  KB/estilo comprimido; corpus já usa itálico com frequência, então T1 real
+  precisaria de ~400-450 KB fixos por peça). Aguardando decisão do usuário —
+  ver perguntas explícitas no memorando.

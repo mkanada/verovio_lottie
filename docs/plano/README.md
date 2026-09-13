@@ -162,7 +162,7 @@ usuário ao chegar neles.
 | Id | Pergunta | Bloqueia | Recomendação inicial |
 | --- | --- | --- | --- |
 | D-CLI | ~~Nomes dos formatos de saída na CLI~~ — **decidido em A04**: `lottie` (JSON cru de uma página, para depuração) e `dotlottie` (pacote final da música) | ~~A04~~, A12 | `lottie` (JSON cru de uma página, para depuração) e `dotlottie` (pacote final da música) |
-| D-TEXTO | Como renderizar texto comum (títulos, andamento, dedilhados, letra) | D01 | Decidir após o memorando B03 |
+| D-TEXTO | ~~Como renderizar texto comum (títulos, andamento, dedilhados, letra)~~ — **decidido em B03**: T1 — fonte TTF (Liberation Serif, Regular+Italic+Bold) embutida no pacote + camada de texto nativa do dotLottie (`ty:5`+`fonts.list`), em vez de converter em contornos. Ver `docs/plano/decisoes/B03-texto.md`. | D01 | T1 (fonte embutida) |
 | D-DESTAQUE | ~~Mecanismo para destacar notas simultâneas (acordes, duas mãos) com fade controlado pelo Lottie~~ — **decidido em B02**: dois mecanismos por modo de uso, mutuamente exclusivos — M2 (agrupamento por instante do timemap, fade autorado) no modo automático; M3 (slot de cor por nota, sem limite, fade não autorado) no modo interativo. Ver `docs/plano/decisoes/B02-mecanismo-destaque.md`. | ~~Fase C~~ C01 | M2 (auto) + M3 (interativo) |
 | D-LAYOUT-PAGINAS | ~~Disposição das páginas na composição e animação de virada~~ — **decidido em B02**: trilha horizontal + engine separado do destaque, virada em dois eventos discretos (entrar no último compasso da página atual → "espreitar"; entrar no primeiro compasso da próxima → "cobrir"). Ver `docs/plano/decisoes/B02-mecanismo-destaque.md`. | ~~C (virada de página)~~ C04 | trilha horizontal, dois eventos por fronteira |
 
@@ -188,7 +188,12 @@ Decisões **já tomadas** (não reabrir): ver "Decisões arquiteturais já tomad
    runtimes de player do zywny suportam rodar as 2 instâncias simultâneas
    (engine principal + engine de página) e compositar entre elas — atenção
    no início de C00/C01.
-2. **Texto sem contornos** — ver D-TEXTO.
+2. **Texto sem contornos** — **decidido em B03** (ver D-TEXTO acima): fonte
+   TTF (Liberation Serif) embutida no pacote, não contornos assados. Custo
+   de tamanho medido no spike: ~208-220 KB comprimidos por estilo de fonte;
+   com Regular+Italic+Bold decidido, ~600-650 KB fixos por peça, acima da
+   maioria dos pacotes do corpus hoje (77-430 KB, A13) — atenção especial em
+   D01 se isso virar problema real.
 3. **Tamanho do arquivo** — a fase A "assa" as coordenadas de cada glifo em cada
    uso (não há `<use>` em Lottie). Otimização fica para a fase D, se o relatório
    de paridade mostrar arquivos grandes demais.
@@ -218,9 +223,9 @@ Decisões **já tomadas** (não reabrir): ver "Decisões arquiteturais já tomad
 | [A13](A13-varredura-do-corpus.md) | Varredura do corpus e relatório de paridade | A12 | — | concluído |
 | [B01](B01-spike-state-machine.md) | Spike: state machine com eventos por `xml:id` | A05 | — | concluído |
 | [B02](B02-memorando-mecanismo-de-destaque.md) | Memorando: mecanismo de destaque e virada | B01 | produziu D-DESTAQUE e D-LAYOUT-PAGINAS | concluído |
-| [B03](B03-memorando-texto.md) | Memorando: texto comum | A13 | produz D-TEXTO | pendente |
+| [B03](B03-memorando-texto.md) | Memorando: texto comum | A13 | produziu D-TEXTO | concluído |
 | [C00](C00-fase-c-esboco.md) | Fase C (animações) — esboço a detalhar, reescrever em C01…Cn | B02, A13 | — (D-DESTAQUE e D-LAYOUT-PAGINAS já decididos) | pendente |
-| [D00](D00-fase-d-esboco.md) | Fase D (paridade completa) — esboço a detalhar | A13, B03 | D-TEXTO | bloqueado |
+| [D00](D00-fase-d-esboco.md) | Fase D (paridade completa) — esboço a detalhar | A13, B03 | — (D-TEXTO já decidido) | pendente |
 | [E00](E00-bindings-opcional.md) | Bindings JS/Python (opcional) | A12 | — | opcional |
 
 Ordem sugerida: A01 → A02 → A03 → A04 → A05 → A06 → A07 → A08 → A09 → A10 →
