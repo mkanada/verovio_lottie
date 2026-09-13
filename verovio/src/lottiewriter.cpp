@@ -410,6 +410,51 @@ static std::string WriteShapeGroup(const LottieShape &shape, int inheritedColor,
     return "{\"ty\":\"gr\",\"it\":[" + JoinItems(items) + "]}";
 }
 
+// Camera "p" keyframe array (C04, docs/plano/C04-paginas-virada.md): one hold stop per page's
+// resting x plus, for every boundary that actually got both event ids (see BuildLayout), two
+// more stops carrying the "peek" (partial move, held) and "cover" (completes the move) phases.
+// Same keyframe shape/easing handles as WriteColorKeyframes, generalized to more than 3 stops
+// and sorted by frame (boundaries are not necessarily contiguous with their page index when
+// some were skipped - see LottiePageBoundary::fromPage).
+static std::string WriteCameraKeyframes(const LottiePageTurnLayout &pageTurn, int trackStep, double peekFraction)
+{
+    struct Stop {
+        int frame;
+        double x;
+    };
+    std::vector<Stop> stops;
+
+    auto restX = [trackStep](std::size_t pageIndex) { return -(static_cast<double>(pageIndex) * trackStep); };
+
+    for (std::size_t i = 0; i < pageTurn.pageRestFrames.size(); ++i) {
+        stops.push_back({ pageTurn.pageRestFrames[i], restX(i) });
+    }
+    for (const LottiePageBoundary &boundary : pageTurn.boundaries) {
+        const double fromX = restX(static_cast<std::size_t>(boundary.fromPage));
+        const double peekX = fromX - peekFraction * trackStep;
+        stops.push_back({ boundary.peekStartFrame, fromX });
+        stops.push_back({ boundary.peekStartFrame + boundary.peekDurationFrames, peekX });
+        stops.push_back({ boundary.coverStartFrame, peekX });
+        stops.push_back(
+            { boundary.coverStartFrame + boundary.coverDurationFrames, restX(static_cast<std::size_t>(boundary.fromPage) + 1) });
+    }
+
+    std::stable_sort(stops.begin(), stops.end(), [](const Stop &a, const Stop &b) { return a.frame < b.frame; });
+
+    std::ostringstream out;
+    out << "[";
+    for (std::size_t i = 0; i < stops.size(); ++i) {
+        if (i) out << ",";
+        out << "{\"t\":" << stops[i].frame << ",\"s\":[" << FormatNumber(stops[i].x) << ",0,0]";
+        if (i + 1 < stops.size()) {
+            out << ",\"i\":{\"x\":1,\"y\":1},\"o\":{\"x\":0,\"y\":0}";
+        }
+        out << "}";
+    }
+    out << "]";
+    return out.str();
+}
+
 using HighlightsById = std::unordered_map<std::string, ActiveHighlight>;
 using InteractiveIds = std::unordered_set<std::string>;
 
@@ -527,7 +572,7 @@ static PageMetrics ComputePageMetrics(const LottiePage &page)
 
 std::string LottieWriter::WriteAnimation(const std::vector<const LottiePage *> &pages, const std::string &name,
     const std::vector<LottieHighlightGroup> &highlightGroups, int highlightColor,
-    const std::unordered_set<std::string> &interactiveIds)
+    const std::unordered_set<std::string> &interactiveIds, const LottiePageTurnLayout &pageTurn, double peekFraction)
 {
     int w = 0;
     int h = 0;
@@ -541,6 +586,10 @@ std::string LottieWriter::WriteAnimation(const std::vector<const LottiePage *> &
     }
 
     const int pageCount = static_cast<int>(pages.size());
+    // The horizontal track step between adjacent pages (C04): reuses the composition's own
+    // width, which is also the viewport the camera clips to (see WriteCameraKeyframes / the
+    // Fit::Contain argument in C04's plan doc for why content outside it never renders).
+    const int trackStep = w;
 
     HighlightsById highlightsById;
     int highlightEnd = 0;
@@ -550,7 +599,10 @@ std::string LottieWriter::WriteAnimation(const std::vector<const LottiePage *> &
             highlightsById[memberId] = { group.startFrame, group.durationFrames };
         }
     }
-    const int op = std::max(pageCount, highlightEnd);
+    int op = std::max(pageCount, highlightEnd);
+    if (pageTurn.enabled) {
+        op = std::max(op, pageTurn.endFrame);
+    }
 
     std::vector<std::string> markerItems;
     if (!highlightGroups.empty()) {
@@ -560,6 +612,25 @@ std::string LottieWriter::WriteAnimation(const std::vector<const LottiePage *> &
                 + std::to_string(group.startFrame) + ",\"dr\":" + std::to_string(group.durationFrames) + "}");
         }
     }
+    if (pageTurn.enabled) {
+        for (std::size_t i = 0; i < pageTurn.pageMarkers.size(); ++i) {
+            markerItems.push_back("{\"cm\":\"" + EscapeJsonString(pageTurn.pageMarkers[i]) + "\",\"tm\":"
+                + std::to_string(pageTurn.pageRestFrames[i]) + ",\"dr\":1}");
+        }
+        for (const LottiePageBoundary &boundary : pageTurn.boundaries) {
+            markerItems.push_back("{\"cm\":\"" + EscapeJsonString(boundary.peekMarker) + "\",\"tm\":"
+                + std::to_string(boundary.peekStartFrame)
+                + ",\"dr\":" + std::to_string(boundary.peekDurationFrames) + "}");
+            markerItems.push_back("{\"cm\":\"" + EscapeJsonString(boundary.coverMarker) + "\",\"tm\":"
+                + std::to_string(boundary.coverStartFrame)
+                + ",\"dr\":" + std::to_string(boundary.coverDurationFrames) + "}");
+        }
+    }
+
+    // Reserved layer indices for the camera rig (C04): "ind" 1 is the camera itself when
+    // pageTurn.enabled, so page layers start at 2 instead of 1 in that case.
+    const int cameraInd = 1;
+    const int firstPageInd = pageTurn.enabled ? 2 : 1;
 
     std::ostringstream out;
     out.imbue(std::locale::classic());
@@ -567,28 +638,56 @@ std::string LottieWriter::WriteAnimation(const std::vector<const LottiePage *> &
         << EscapeJsonString(name) << "\",\"ddd\":0,\"assets\":[],\"markers\":[" << JoinItems(markerItems)
         << "],\"layers\":[";
 
+    bool needComma = false;
+    if (pageTurn.enabled) {
+        out << "{\"ddd\":0,\"ind\":" << cameraInd << ",\"ty\":3,\"nm\":\"camera\",\"sr\":1,"
+            << "\"ks\":{\"o\":{\"a\":0,\"k\":100},\"r\":{\"a\":0,\"k\":0},"
+            << "\"p\":{\"a\":1,\"k\":" << WriteCameraKeyframes(pageTurn, trackStep, peekFraction) << "},"
+            << "\"a\":{\"a\":0,\"k\":[0,0,0]},\"s\":{\"a\":0,\"k\":[100,100,100]}},"
+            << "\"ao\":0,\"ip\":0,\"op\":" << op << ",\"st\":0,\"bm\":0}";
+        needComma = true;
+    }
+
     for (int i = 0; i < pageCount; ++i) {
-        if (i) out << ",";
+        if (needComma) out << ",";
+        needComma = true;
         const LottiePage &page = *pages[i];
         const PageMetrics &m = metrics[i];
 
-        const double px = m.tx + m.scale * page.originX;
+        double px = m.tx + m.scale * page.originX;
+        if (pageTurn.enabled) {
+            px += static_cast<double>(i) * trackStep;
+        }
         const double py = m.ty + m.scale * page.originY;
         const double s = m.scale * 100.0;
 
-        // Only the last page's own out-point is stretched to cover the highlight tail (see
-        // C02's "Decisão de escopo": this writer supports a highlighted last page, the
-        // multi-page/whole-score case is C04's).
-        const int pageOp = (i == pageCount - 1) ? op : (i + 1);
+        int pageIp;
+        int pageOp;
+        if (pageTurn.enabled) {
+            // Visibility is now purely the camera + the composition's own viewport clipping
+            // (C04) - every page layer is always "on".
+            pageIp = 0;
+            pageOp = op;
+        }
+        else {
+            // Pre-C04 windowing: only the last page's own out-point is stretched to cover the
+            // highlight tail (C02's "Decisão de escopo" - this branch only ever sees a single
+            // highlighted page; the multi-page case always has pageTurn.enabled).
+            pageIp = i;
+            pageOp = (i == pageCount - 1) ? op : (i + 1);
+        }
 
-        out << "{\"ddd\":0,\"ind\":" << (i + 1) << ",\"ty\":4,\"nm\":\"page-" << (i + 1) << "\",\"sr\":1,"
-            << "\"ks\":{\"o\":{\"a\":0,\"k\":100},\"r\":{\"a\":0,\"k\":0},"
+        out << "{\"ddd\":0,\"ind\":" << (firstPageInd + i) << ",\"ty\":4,\"nm\":\"page-" << (i + 1) << "\",\"sr\":1,";
+        if (pageTurn.enabled) {
+            out << "\"parent\":" << cameraInd << ",";
+        }
+        out << "\"ks\":{\"o\":{\"a\":0,\"k\":100},\"r\":{\"a\":0,\"k\":0},"
             << "\"p\":{\"a\":0,\"k\":[" << FormatNumber(px) << "," << FormatNumber(py) << ",0]},"
             << "\"a\":{\"a\":0,\"k\":[0,0,0]},"
             << "\"s\":{\"a\":0,\"k\":[" << FormatNumber(s) << "," << FormatNumber(s) << ",100]}},"
             << "\"ao\":0,\"shapes\":[" << WriteLayerShapes(page, highlightsById, highlightColor, interactiveIds)
             << "],"
-            << "\"ip\":" << i << ",\"op\":" << pageOp << ",\"st\":0,\"bm\":0}";
+            << "\"ip\":" << pageIp << ",\"op\":" << pageOp << ",\"st\":0,\"bm\":0}";
     }
 
     out << "]}";

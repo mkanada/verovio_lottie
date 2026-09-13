@@ -130,14 +130,19 @@ Trate estas decisões como fixas — não as reabra sem confirmar com o usuário
 Ver seção "Questões técnicas em aberto" em
 `docs/descricao-do-projeto.md`. Resumo:
 
-- Grafo *detalhado* da State Machine (nomes exatos de estados/inputs/
-  listeners) — o mecanismo já foi decidido em B02 (ver acima), falta só a
-  autoria concreta, prevista para C01.
-- Curva/timing exatos da animação de "espreitar" e de "cobrir" na virada
-  de página, e como as coordenadas do overlay de destaque acompanham a
-  página/câmera corrente — a topologia já foi decidida em B02, falta a
-  autoria concreta (Fase C).
-- Nome da flag de CLI e estrutura de arquivos do novo formato de exportação.
+- ~~Grafo *detalhado* da State Machine (nomes exatos de estados/inputs/
+  listeners)~~ — resolvido em C01-C03 (`sm_highlight`: `GlobalState` em
+  estrela, `PlaybackState` por grupo M2, slots M3 por `xml:id`).
+- ~~Curva/timing exatos da animação de "espreitar" e de "cobrir" na virada
+  de página~~ — resolvido em C04 (`docs/plano/C04-paginas-virada.md`):
+  trilha horizontal + câmera (`sm_page`), dois eventos por fronteira
+  (`peekN`/`coverN`), constantes MVP documentadas lá. Como as coordenadas
+  do overlay de destaque acompanhariam a câmera corrente segue N/A — a
+  decisão final de B02 (M2+M3 por modo) não usa mais overlay separado, o
+  destaque já vive na mesma composição `score` que a câmera.
+- Nome da flag de CLI e estrutura de arquivos do novo formato de exportação
+  (fora o que já foi decidido caso a caso: `lottie`/`dotlottie` em A04,
+  `dotlottie-highlight` em C02 — se surgir necessidade de um formato novo).
 
 ## Notas operacionais
 

@@ -165,8 +165,8 @@ usuário ao chegar neles.
 | --- | --- | --- | --- |
 | D-CLI | ~~Nomes dos formatos de saída na CLI~~ — **decidido em A04**: `lottie` (JSON cru de uma página, para depuração) e `dotlottie` (pacote final da música) | ~~A04~~, A12 | `lottie` (JSON cru de uma página, para depuração) e `dotlottie` (pacote final da música) |
 | D-TEXTO | ~~Como renderizar texto comum (títulos, andamento, dedilhados, letra)~~ — **decidido em B03**: T1 — fonte TTF (Liberation Serif, Regular+Italic+Bold) embutida no pacote + camada de texto nativa do dotLottie (`ty:5`+`fonts.list`), em vez de converter em contornos. Ver `docs/plano/decisoes/B03-texto.md`. | D01 | T1 (fonte embutida) |
-| D-DESTAQUE | ~~Mecanismo para destacar notas simultâneas (acordes, duas mãos) com fade controlado pelo Lottie~~ — **decidido em B02**: dois mecanismos por modo de uso, mutuamente exclusivos — M2 (agrupamento por instante do timemap, fade autorado) no modo automático; M3 (slot de cor por nota, sem limite, fade não autorado) no modo interativo. Ver `docs/plano/decisoes/B02-mecanismo-destaque.md`. | ~~Fase C~~ ~~C01~~ ~~C02~~ ~~C03~~ (C01 entrega o writer genérico + valida o Risco 1; C02 entrega M2 funcional — cores keyframadas + agrupamento por instante do timemap — para uma página por vez; C03 entrega M3 — slot de cor por nota — e o protocolo de handoff M2↔M3, ver `docs/plano/C03-slots-interativos.md`) | M2 (auto) + M3 (interativo) |
-| D-LAYOUT-PAGINAS | ~~Disposição das páginas na composição e animação de virada~~ — **decidido em B02**: trilha horizontal + engine separado do destaque, virada em dois eventos discretos (entrar no último compasso da página atual → "espreitar"; entrar no primeiro compasso da próxima → "cobrir"). Ver `docs/plano/decisoes/B02-mecanismo-destaque.md`. | ~~C (virada de página)~~ C04 | trilha horizontal, dois eventos por fronteira |
+| D-DESTAQUE | ~~Mecanismo para destacar notas simultâneas (acordes, duas mãos) com fade controlado pelo Lottie~~ — **decidido em B02**: dois mecanismos por modo de uso, mutuamente exclusivos — M2 (agrupamento por instante do timemap, fade autorado) no modo automático; M3 (slot de cor por nota, sem limite, fade não autorado) no modo interativo. Ver `docs/plano/decisoes/B02-mecanismo-destaque.md`. | ~~Fase C~~ ~~C01~~ ~~C02~~ ~~C03~~ ~~C04~~ (C01 entrega o writer genérico + valida o Risco 1; C02 entrega M2 funcional — cores keyframadas + agrupamento por instante do timemap — para uma página por vez; C03 entrega M3 — slot de cor por nota — e o protocolo de handoff M2↔M3, ver `docs/plano/C03-slots-interativos.md`; C04 reintegra M2+M3 na partitura inteira dentro do pacote `dotlottie` final, ver `docs/plano/C04-paginas-virada.md`) | M2 (auto) + M3 (interativo) |
+| D-LAYOUT-PAGINAS | ~~Disposição das páginas na composição e animação de virada~~ — **decidido em B02**: trilha horizontal + engine separado do destaque, virada em dois eventos discretos (entrar no último compasso da página atual → "espreitar"; entrar no primeiro compasso da próxima → "cobrir"). Ver `docs/plano/decisoes/B02-mecanismo-destaque.md`. **Implementado em C04** (`docs/plano/C04-paginas-virada.md`): camada-câmera nula + `sm_page`, `Toolkit::RenderToDotLottieFile`/CLI `dotlottie` agora produz o pacote completo (M2+M3+página) da partitura inteira. | ~~C (virada de página)~~ ~~C04~~ | trilha horizontal, dois eventos por fronteira |
 
 Decisões **já tomadas** (não reabrir): ver "Decisões arquiteturais já tomadas" no
 `CLAUDE.md`.
@@ -189,7 +189,14 @@ Decisões **já tomadas** (não reabrir): ver "Decisões arquiteturais já tomad
    Risco residual aceito sem spike dedicado: não está confirmado se os
    runtimes de player do zywny suportam rodar as 2 instâncias simultâneas
    (engine principal + engine de página) e compositar entre elas — atenção
-   no início de C00/C01.
+   no início de C00/C01. **Achado concreto de C04** (leitura de código, não
+   suposição): o `dotlottie-rs` de hoje não expõe, na API pública de
+   `Player`, nenhum jeito de ler a posição/transform de uma camada por fora
+   (o único mecanismo relacionado, `get_layer_obb`/`hit_test`, vive atrás de
+   `renderer: pub(crate)` e só é usado internamente pelas guardas de
+   interação da state machine) — o risco continua aberto e não resolvido,
+   só mais concreto; ver `docs/plano/C04-paginas-virada.md`, seção "Ler
+   antes".
 2. **Texto sem contornos** — **decidido em B03** (ver D-TEXTO acima): fonte
    TTF (Liberation Serif) embutida no pacote, não contornos assados. Custo
    de tamanho medido no spike: ~208-220 KB comprimidos por estilo de fonte;
@@ -226,10 +233,13 @@ Decisões **já tomadas** (não reabrir): ver "Decisões arquiteturais já tomad
 | [B01](B01-spike-state-machine.md) | Spike: state machine com eventos por `xml:id` | A05 | — | concluído |
 | [B02](B02-memorando-mecanismo-de-destaque.md) | Memorando: mecanismo de destaque e virada | B01 | produziu D-DESTAQUE e D-LAYOUT-PAGINAS | concluído |
 | [B03](B03-memorando-texto.md) | Memorando: texto comum | A13 | produziu D-TEXTO | concluído |
-| [C00](C00-fase-c-esboco.md) | Fase C (animações) — esboço a detalhar, reescrever em C01…Cn | B02, A13 | — (D-DESTAQUE e D-LAYOUT-PAGINAS já decididos) | em andamento (C01, C02, C03 já extraídos; C04…C06 seguem como esboço) |
+| [C00](C00-fase-c-esboco.md) | Fase C (animações) — esboço a detalhar, reescrever em C01…Cn | B02, A13 | — (D-DESTAQUE e D-LAYOUT-PAGINAS já decididos) | concluído (C01-C06 todos extraídos e concluídos) |
 | [C01](C01-writer-state-machine.md) | Writer de state machine (`s/<id>.json`, `stateMachines` no `manifest.json`) | A12, B02 | — | concluído |
 | [C02](C02-notas-animadas.md) | Propriedades animadas das notas (M2: cores keyframadas + agrupamento por instante do timemap), uma página por vez | A12, C01 | — | concluído |
 | [C03](C03-slots-interativos.md) | Slots interativos (M3: `sid` por nota), protocolo de handoff M2↔M3 (`fire idle`/`clear_slots`) e validação de nomes/unicidade | A12, C02 | — | concluído |
+| [C04](C04-paginas-virada.md) | Páginas e virada estilo Synthesia (trilha horizontal + câmera + `sm_page`); reintegra M2/M3 na partitura inteira no pacote `dotlottie` final | A12, A13, C01, C02, C03 | — | concluído |
+| [C05](C05-host-simulado-timemap.md) | Host simulado com timemap real (`verovio -t timemap` → roteiro de `compare sm-render`), `compare/scripts/sm-playback.sh` | A12, A13, B01, C01-C04 | — | concluído |
+| [C06](C06-opcoes-cor-duracao.md) | Opções de CLI para cor/duração do destaque e da virada de página | C02, C04 | — | concluído |
 | [D00](D00-fase-d-esboco.md) | Fase D (paridade completa) — esboço a detalhar | A13, B03 | — (D-TEXTO já decidido) | pendente |
 | [E00](E00-bindings-opcional.md) | Bindings JS/Python (opcional) | A12 | — | opcional |
 

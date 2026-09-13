@@ -180,13 +180,21 @@ do projeto e devem ser resolvidos/pesquisados durante o desenvolvimento:
 
 1. ~~Ferramenta exata de renderização Lottie → PNG usada nos testes de
    comparação visual.~~ Resolvido: `dotlottie-rs` (ver `compare/README.md`).
-2. Desenho detalhado do grafo da State Machine do dotLottie (estados,
+2. ~~Desenho detalhado do grafo da State Machine do dotLottie (estados,
    inputs, listeners) que satisfaça o requisito de "acesso direto a qualquer
-   nota".
-3. Como organizar/posicionar os layers de página dentro de uma única
+   nota".~~ Resolvido: topologia em estrela via `GlobalState`+`PlaybackState`
+   por segmento, agrupamento M2 por instante do timemap, slots M3 por nota
+   (ver `docs/plano/C01-writer-state-machine.md`,
+   `docs/plano/C02-notas-animadas.md`, `docs/plano/C03-slots-interativos.md`).
+3. ~~Como organizar/posicionar os layers de página dentro de uma única
    composição (ex.: disposição horizontal tipo "trilha de filme") e como o
    host lida com o viewport/recorte visível, especialmente para peças
-   longas com muitas páginas.
+   longas com muitas páginas.~~ Resolvido: trilha horizontal + camada-câmera
+   nula (`ty:3`) parent de todas as páginas, recorte pelo próprio viewport
+   da composição (`w`/`h` = tamanho de uma página) — ver
+   `docs/plano/C04-paginas-virada.md`. Como o host lê a posição de câmera de
+   uma instância `Player` e composita na renderização visível de outra
+   continua em aberto (ver risco 1 em `docs/plano/README.md`).
 4. Nome da flag de CLI e estrutura de arquivos (manifest, assets) do novo
    formato de exportação.
 5. Estratégia de configurabilidade futura do estilo de destaque (cursor,

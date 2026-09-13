@@ -16,6 +16,7 @@
 
 #include "lottiegeometry.h"
 #include "lottiehighlight.h"
+#include "lottiepageturn.h"
 #include "lottiestatemachine.h"
 
 namespace vrv {
@@ -47,10 +48,23 @@ public:
      * set gets a "sid" on its fill/stroke color property (equal to that id), so the host can
      * address it directly with Player::set_color_slot regardless of whether it is also part
      * of a highlightGroups entry. Passing none reproduces the exact byte output of before C03.
+     *
+     * pageTurn (see docs/plano/C04-paginas-virada.md) is also optional and independent of the
+     * two parameters above: when pageTurn.enabled, every page layer is repositioned onto a
+     * horizontal track (x = pageIndex * trackStep, trackStep being the composition's own width)
+     * and parented to a new null "camera" layer whose x position is keyframed across
+     * pageTurn's markers (peekFraction controls how far the camera "peeks" toward the next page
+     * before "covering" the rest of the move - see C04; 0.08 was picked empirically while
+     * validating this step - anything above ~0.15 starts sliding most of the current page out
+     * of view during "peek" instead of just hinting at the next one at the edge). Passing a
+     * default-constructed LottiePageTurnLayout (enabled == false, the default) reproduces the
+     * exact byte output of before C04 - no camera layer, no page markers, each page layer keeps
+     * today's own ip/op windowing.
      */
     static std::string WriteAnimation(const std::vector<const LottiePage *> &pages, const std::string &name,
         const std::vector<LottieHighlightGroup> &highlightGroups = {}, int highlightColor = 0xE53935,
-        const std::unordered_set<std::string> &interactiveIds = {});
+        const std::unordered_set<std::string> &interactiveIds = {}, const LottiePageTurnLayout &pageTurn = {},
+        double peekFraction = 0.08);
 
     /**
      * Serialize a state machine (dotLottie v2 format, validated against dotlottie-rs by the

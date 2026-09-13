@@ -9,7 +9,9 @@
 
 //----------------------------------------------------------------------------
 
+#include <algorithm>
 #include <cassert>
+#include <cctype>
 #include <locale>
 #include <regex>
 #include <unordered_set>
@@ -35,6 +37,7 @@
 #include "layer.h"
 #include "lottiedevicecontext.h"
 #include "lottiehighlight.h"
+#include "lottiepageturn.h"
 #include "lottiewriter.h"
 #include "measure.h"
 #include "nc.h"
@@ -1825,6 +1828,22 @@ bool Toolkit::RenderToSVGFile(const std::string &filename, int pageNo)
     return true;
 }
 
+// Parses a 6-digit hex string (no leading '#', matching the exporter's own 0xE53935-style
+// literal default) into a 24-bit RGB int; falls back to defaultColor with a warning on anything
+// else instead of aborting the export (same tolerance-to-malformed-input pattern as
+// LottieHighlightBuilder's reserved-name/duplicate-id checks, C03).
+static int ParseLottieHighlightColor(const std::string &hex, int defaultColor)
+{
+    const bool valid
+        = (hex.size() == 6) && std::all_of(hex.begin(), hex.end(), [](unsigned char c) { return std::isxdigit(c); });
+    if (!valid) {
+        LogWarning(
+            "Invalid lottieHighlightColor '%s' (expected 6 hex digits, e.g. \"E53935\"); using default.", hex.c_str());
+        return defaultColor;
+    }
+    return static_cast<int>(std::stoul(hex, nullptr, 16));
+}
+
 std::string Toolkit::RenderToLottieAnimation()
 {
     this->ResetLogBuffer();
@@ -1848,13 +1867,77 @@ bool Toolkit::RenderToDotLottieFile(const std::string &filename)
 {
     this->ResetLogBuffer();
 
-    std::string animation = this->RenderToLottieAnimation();
-    if (animation.empty()) return false;
+    LottieDeviceContext lottie;
+    lottie.SetResources(&m_doc.GetResources());
+
+    for (int p = 1; p <= this->GetPageCount(); ++p) {
+        if (!this->RenderToDeviceContext(p, &lottie)) return false;
+    }
+
+    std::vector<const LottiePage *> pages;
+    std::unordered_set<std::string> allIds;
+    for (const LottiePage &page : lottie.GetPages()) {
+        pages.push_back(&page);
+        const std::unordered_set<std::string> pageIds = LottieHighlightBuilder::CollectIds(*page.root);
+        allIds.insert(pageIds.begin(), pageIds.end());
+    }
+
+    // M2 (destaque automático, docs/plano/C02-notas-animadas.md), now covering the whole score
+    // instead of a single page (C02 explicitly left this reintegration for C04). Same MVP
+    // constants as RenderToDotLottieHighlightFile, now configurable (C06,
+    // docs/plano/C06-opcoes-cor-duracao.md) via --lottieHighlightColor/--lottieHighlightDuration.
+    // kFirstHighlightFrame/kHighlightGapFrames stay fixed - see C06's "Decisões de escopo".
+    const int kFirstHighlightFrame = 1;
+    const int kHighlightDurationFrames = m_options->m_lottieHighlightDuration.GetValue();
+    const int kHighlightGapFrames = 1;
+    const int highlightColor = ParseLottieHighlightColor(m_options->m_lottieHighlightColor.GetValue(), 0xE53935);
+    const std::vector<LottieHighlightGroup> groups = LottieHighlightBuilder::BuildGroups(
+        m_doc, allIds, kFirstHighlightFrame, kHighlightDurationFrames, kHighlightGapFrames);
+
+    int highlightEnd = 0;
+    std::unordered_set<std::string> interactiveIds;
+    for (const LottieHighlightGroup &group : groups) {
+        highlightEnd = std::max(highlightEnd, group.startFrame + group.durationFrames);
+        interactiveIds.insert(group.memberIds.begin(), group.memberIds.end());
+    }
+
+    // Page turn (C04, docs/plano/C04-paginas-virada.md): only meaningful with more than one
+    // page. MVP constants, same style as the highlight ones above. The page-turn frame range
+    // starts right after the highlight range so the two stay monotonically increasing (not
+    // required for correctness - the two state machines never seek into each other's markers -
+    // but keeps the package easier to inspect/debug).
+    // Also configurable since C06 (--lottiePagePeekDuration/--lottiePageCoverDuration/
+    // --lottiePagePeekFraction); kPageGapFrames stays fixed for the same reason as
+    // kHighlightGapFrames above.
+    const int kPeekDurationFrames = m_options->m_lottiePagePeekDuration.GetValue();
+    const int kCoverDurationFrames = m_options->m_lottiePageCoverDuration.GetValue();
+    const int kPageGapFrames = 1;
+    const LottiePageTurnLayout pageTurn = LottiePageTurnBuilder::BuildLayout(
+        pages, highlightEnd + 1, kPeekDurationFrames, kCoverDurationFrames, kPageGapFrames);
+
+    const std::string animation = LottieWriter::WriteAnimation(pages, "score", groups, highlightColor,
+        interactiveIds, pageTurn, m_options->m_lottiePagePeekFraction.GetValue());
 
     ZipFileWriter zip;
-    zip.AddFile("manifest.json",
-        LottieWriter::WriteManifest("Verovio " + this->GetVersion() + " (verovio_lottie)", { "score" }, "score"));
     zip.AddFile("a/score.json", animation);
+
+    const LottieStateMachine highlightSm = LottieHighlightBuilder::BuildStateMachine(groups, "score", "sm_highlight");
+    zip.AddFile("s/sm_highlight.json", LottieWriter::WriteStateMachine(highlightSm));
+
+    std::vector<std::string> stateMachineIds = { "sm_highlight" };
+    if (pageTurn.enabled) {
+        const LottieStateMachine pageSm = LottiePageTurnBuilder::BuildStateMachine(pageTurn, "score", "sm_page");
+        zip.AddFile("s/sm_page.json", LottieWriter::WriteStateMachine(pageSm));
+        stateMachineIds.push_back("sm_page");
+    }
+
+    // No initial.stateMachine: with sm_highlight and (when there is more than one page)
+    // sm_page meant for two separate Player instances (see C04's "Decisões de escopo"), there
+    // is no single obvious default to auto-activate - deciding that is a host/product call, not
+    // this exporter's (same reasoning as C01's WriteManifest doc comment).
+    zip.AddFile("manifest.json",
+        LottieWriter::WriteManifest(
+            "Verovio " + this->GetVersion() + " (verovio_lottie)", { "score" }, "score", stateMachineIds));
 
     return zip.Save(filename);
 }
@@ -1871,12 +1954,15 @@ bool Toolkit::RenderToDotLottieHighlightFile(const std::string &filename, int pa
     const LottiePage &page = lottie.GetPages().front();
     const std::unordered_set<std::string> pageIds = LottieHighlightBuilder::CollectIds(*page.root);
 
-    // MVP constants (C00/C02: "cor e duração como constantes"). kFirstHighlightFrame starts
-    // right after the single page-select frame (frame 0) used by the existing single-page
-    // timeline; kHighlightGapFrames is the B01/E2 boundary-frame fix (see gen.py's NOTE_SLOT).
+    // MVP constants (C00/C02: "cor e duração como constantes"), now configurable via
+    // --lottieHighlightColor/--lottieHighlightDuration (C06, docs/plano/C06-opcoes-cor-duracao.md).
+    // kFirstHighlightFrame starts right after the single page-select frame (frame 0) used by the
+    // existing single-page timeline; kHighlightGapFrames is the B01/E2 boundary-frame fix (see
+    // gen.py's NOTE_SLOT) and stays fixed - see C06's "Decisões de escopo".
     const int kFirstHighlightFrame = 1;
-    const int kHighlightDurationFrames = 20;
+    const int kHighlightDurationFrames = m_options->m_lottieHighlightDuration.GetValue();
     const int kHighlightGapFrames = 1;
+    const int highlightColor = ParseLottieHighlightColor(m_options->m_lottieHighlightColor.GetValue(), 0xE53935);
 
     // Runs the timemap functor on m_doc directly (not a cloned MIDI doc via SetMidiDoc()),
     // so ids match exactly what was just rendered - see C02's "Fora de escopo" for the
@@ -1892,7 +1978,8 @@ bool Toolkit::RenderToDotLottieHighlightFile(const std::string &filename, int pa
         interactiveIds.insert(group.memberIds.begin(), group.memberIds.end());
     }
 
-    const std::string animation = LottieWriter::WriteAnimation({ &page }, "score", groups, 0xE53935, interactiveIds);
+    const std::string animation
+        = LottieWriter::WriteAnimation({ &page }, "score", groups, highlightColor, interactiveIds);
     const LottieStateMachine stateMachine = LottieHighlightBuilder::BuildStateMachine(groups, "score", "sm_highlight");
 
     ZipFileWriter zip;

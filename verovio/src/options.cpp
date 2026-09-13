@@ -1052,6 +1052,35 @@ Options::Options()
     m_landscape.Init(false);
     this->Register(&m_landscape, "landscape", &m_general);
 
+    m_lottieHighlightColor.SetInfo("Lottie highlight color",
+        "Color used to flash a note (or M2 group) on destaque, as a 6-digit hex string without "
+        "'#' (e.g. \"E53935\"); fades back to the note's own resolved color");
+    m_lottieHighlightColor.Init("E53935");
+    this->Register(&m_lottieHighlightColor, "lottieHighlightColor", &m_general);
+
+    m_lottieHighlightDuration.SetInfo(
+        "Lottie highlight duration", "Duration of the note highlight fade, in frames at the animation's fixed 30fps");
+    m_lottieHighlightDuration.Init(20, 1, 300);
+    this->Register(&m_lottieHighlightDuration, "lottieHighlightDuration", &m_general);
+
+    m_lottiePageCoverDuration.SetInfo("Lottie page-turn cover duration",
+        "Duration of the page-turn \"cover\" phase (camera completes the move to the next page), "
+        "in frames at the animation's fixed 30fps");
+    m_lottiePageCoverDuration.Init(20, 1, 300);
+    this->Register(&m_lottiePageCoverDuration, "lottiePageCoverDuration", &m_general);
+
+    m_lottiePagePeekDuration.SetInfo("Lottie page-turn peek duration",
+        "Duration of the page-turn \"peek\" phase (camera hints at the next page), in frames at "
+        "the animation's fixed 30fps");
+    m_lottiePagePeekDuration.Init(15, 1, 300);
+    this->Register(&m_lottiePagePeekDuration, "lottiePagePeekDuration", &m_general);
+
+    m_lottiePagePeekFraction.SetInfo("Lottie page-turn peek fraction",
+        "Fraction (0-1) of the distance to the next page the camera moves during the \"peek\" "
+        "phase before pausing and \"covering\" the rest");
+    m_lottiePagePeekFraction.Init(0.08, 0.0, 1.0);
+    this->Register(&m_lottiePagePeekFraction, "lottiePagePeekFraction", &m_general);
+
     m_minLastJustification.SetInfo("Minimum last-system-justification width",
         "The last system is only justified if the unjustified width is greater than this percent");
     m_minLastJustification.Init(0.8, 0.0, 1.0);

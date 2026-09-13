@@ -105,7 +105,25 @@ print(width, height)
 PYEOF
 )
 
-        FRAME=$((PAGE_NUM - 1))
+        # Frame de repouso da câmera pra página $PAGE_NUM (docs/plano/C04-paginas-virada.md) -
+        # mesmo formato de lookup de marker "page<N-1>" que compare-page.sh usa, com o mesmo
+        # fallback pra "frame == página - 1" pra pacotes sem trilha horizontal (1 página só).
+        FRAME=$(python3 - "$LOTTIE_FILE" "$PAGE_NUM" <<'PYEOF'
+import json
+import subprocess
+import sys
+
+lottie_path, page = sys.argv[1], int(sys.argv[2])
+raw = subprocess.run(["unzip", "-p", lottie_path, "a/score.json"], capture_output=True, check=True).stdout
+data = json.loads(raw)
+marker_name = f"page{page - 1}"
+for marker in data.get("markers", []):
+    if marker.get("cm") == marker_name:
+        print(marker["tm"])
+        sys.exit(0)
+print(page - 1)
+PYEOF
+)
         echo "==> Página $PAGE_NUM: Lottie -> PNG (frame $FRAME, ${WIDTH}x${HEIGHT})"
         "$COMPARE_BIN" lottie-to-png "$LOTTIE_FILE" "$PAGE_PREFIX-lottie.png" --width "$WIDTH" --height "$HEIGHT" --frame "$FRAME"
 

@@ -649,6 +649,11 @@ public:
     OptionBool m_incip;
     OptionBool m_justifyVertically;
     OptionBool m_landscape;
+    OptionString m_lottieHighlightColor;
+    OptionInt m_lottieHighlightDuration;
+    OptionInt m_lottiePageCoverDuration;
+    OptionInt m_lottiePagePeekDuration;
+    OptionDbl m_lottiePagePeekFraction;
     OptionDbl m_minLastJustification;
     OptionBool m_mmOutput;
     OptionBool m_moveScoreDefinitionToStaff;

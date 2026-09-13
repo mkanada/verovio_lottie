@@ -50,7 +50,7 @@ if [[ "$EXT" == "lottie" ]]; then
     # pra (re)gerar o SVG — reaproveita o PNG do SVG já gerado por uma
     # execução anterior deste script sobre o arquivo de partitura original
     # (mesmo prefixo, já que NAME ignora a extensão) e só extrai a página
-    # pedida do pacote, no frame N-1 (uma página por frame, ver LottieWriter).
+    # pedida do pacote.
     if [[ ! -f "$PREFIX-svg.png" ]]; then
         echo "PNG do SVG não encontrado em $PREFIX-svg.png." >&2
         echo "Rode antes: $0 <arquivo-de-partitura-original> $PAGE [tolerância]" >&2
@@ -69,7 +69,29 @@ print(width, height)
 PYEOF
 )
 
-    FRAME=$((PAGE - 1))
+    # Frame de repouso da câmera pra página $PAGE (docs/plano/C04-paginas-virada.md):
+    # pacotes multi-página gerados a partir de C04 têm um marker "page<N-1>" em
+    # a/score.json indicando o frame em que a câmera fica parada exatamente na
+    # página N (a trilha horizontal + câmera substituiu a suposição antiga
+    # "frame == página - 1"). Pacotes sem essa trilha (dotlottie-highlight, ou
+    # um .lottie de antes de C04) não têm esse marker — nesse caso volta pra
+    # suposição antiga.
+    FRAME=$(python3 - "$INPUT_FILE" "$PAGE" <<'PYEOF'
+import json
+import subprocess
+import sys
+
+lottie_path, page = sys.argv[1], int(sys.argv[2])
+raw = subprocess.run(["unzip", "-p", lottie_path, "a/score.json"], capture_output=True, check=True).stdout
+data = json.loads(raw)
+marker_name = f"page{page - 1}"
+for marker in data.get("markers", []):
+    if marker.get("cm") == marker_name:
+        print(marker["tm"])
+        sys.exit(0)
+print(page - 1)
+PYEOF
+)
     echo "==> Lottie -> PNG (pacote dotLottie existente, frame $FRAME, ${WIDTH}x${HEIGHT})"
     "$COMPARE_BIN" lottie-to-png "$INPUT_FILE" "$PREFIX-lottie.png" --width "$WIDTH" --height "$HEIGHT" --frame "$FRAME"
 
