@@ -60,11 +60,21 @@ public:
      * default-constructed LottiePageTurnLayout (enabled == false, the default) reproduces the
      * exact byte output of before C04 - no camera layer, no page markers, each page layer keeps
      * today's own ip/op windowing.
+     *
+     * embedCommonText (D01, see docs/plano/D01-texto-comum.md) is also optional and independent
+     * of the parameters above: false (the default) reproduces the exact byte output of before
+     * D01 - common (non-SMuFL) text runs collected in the IR are simply not written. true emits
+     * one native Lottie text layer ("ty":5, sibling of each page's own "ty":4 shape layer) per
+     * run, plus a top-level "fonts" entry with the three vendored Liberation Serif styles
+     * (Regular/Italic/Bold) - only meaningful for callers that also embed the matching
+     * f/LiberationSerif-*.ttf files in the package (RenderToDotLottieFile/
+     * RenderToDotLottieHighlightFile), since the "lottie" JSON format (CLI debug tool, A04) has
+     * nowhere to embed them.
      */
     static std::string WriteAnimation(const std::vector<const LottiePage *> &pages, const std::string &name,
         const std::vector<LottieHighlightGroup> &highlightGroups = {}, int highlightColor = 0xE53935,
         const std::unordered_set<std::string> &interactiveIds = {}, const LottiePageTurnLayout &pageTurn = {},
-        double peekFraction = 0.08);
+        double peekFraction = 0.08, bool embedCommonText = false);
 
     /**
      * Serialize a state machine (dotLottie v2 format, validated against dotlottie-rs by the

@@ -491,14 +491,31 @@ void LottieDeviceContext::DrawText(
         }
     }
     else {
-        // Common (non-SMuFL) text is not rendered until D-TEXTO; only advance the pen so
-        // subsequent SMuFL runs in the same chunk (e.g. a dynamic mixing letters and glyphs)
-        // stay correctly positioned, and count the skipped run for the EndPage warning.
+        // Common (non-SMuFL) text: D01 (docs/plano/D01-texto-comum.md) - built as a native
+        // Lottie text layer (LottieWriter::WriteAnimation, embedCommonText) instead of a
+        // shape, so it needs only the anchor/alignment/font metadata, not glyph outlines.
+        assert(!m_brushStack.empty());
+        const Brush &currentBrush = m_brushStack.top();
+
+        LottieTextRun run;
+        run.text = chars;
+        run.origin = Point(m_textPenX, m_textPenY);
+        run.alignment = m_textAlignment;
+        run.pointSize = font->GetPointSize();
+        run.letterSpacing = letterSpacing;
+        run.style = font->GetStyle();
+        run.weight = font->GetWeight();
+        run.color = currentBrush.HasColor() ? currentBrush.GetColor() : COLOR_NONE;
+        this->AddTextRun(std::move(run));
+
+        // Common text uses the Lottie TextDocument's own justification ("j") instead of
+        // FinalizeTextChunk's manual vertex offset (shapes have no native notion of
+        // "justified"), so the pen still needs to advance for any SMuFL runs that follow in
+        // the same chunk, but the run itself is inserted directly, not via m_textChunkShapes.
         TextExtend extend;
         this->GetTextExtent(chars, &extend, true);
         m_textPenX += extend.m_width;
         m_textChunkWidth += extend.m_width;
-        ++m_skippedTextRuns;
     }
 }
 
@@ -741,12 +758,6 @@ void LottieDeviceContext::EndPage()
 {
     assert(m_nodeStack.size() == 1);
     m_nodeStack.clear();
-
-    if (m_skippedTextRuns > 0) {
-        LogWarning(
-            "LottieDeviceContext: %u common text run(s) not rendered (pending D-TEXTO)", m_skippedTextRuns);
-        m_skippedTextRuns = 0;
-    }
 }
 
 void LottieDeviceContext::AddShape(LottieShape &&shape)
@@ -770,6 +781,15 @@ void LottieDeviceContext::AddShape(LottieShape &&shape)
     else {
         node->children.push_back(std::move(child));
     }
+}
+
+void LottieDeviceContext::AddTextRun(LottieTextRun &&run)
+{
+    assert(!m_nodeStack.empty());
+
+    LottieChild child;
+    child.text = std::move(run);
+    m_nodeStack.back()->children.push_back(std::move(child));
 }
 
 } // namespace vrv

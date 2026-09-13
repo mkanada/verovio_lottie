@@ -53,15 +53,34 @@ static std::string FormatNumber(double value)
     return s;
 }
 
+// Escapes a UTF-8 string for a JSON string literal. Class names, colors and xml:ids are never
+// anything but printable ASCII, but D01's common text runs come straight from the score's own
+// text content (e.g. a MusicXML credit line) and can carry raw control characters such as an
+// embedded '\n' - illegal unescaped inside a JSON string per spec - so every control character
+// is escaped, not just '"'/'\\'.
 static std::string EscapeJsonString(const std::string &s)
 {
+    static const char *const kHex = "0123456789abcdef";
+
     std::string out;
     out.reserve(s.size());
-    for (char c : s) {
-        if ((c == '"') || (c == '\\')) {
-            out.push_back('\\');
+    for (unsigned char c : s) {
+        switch (c) {
+            case '"': out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default:
+                if (c < 0x20) {
+                    out += "\\u00";
+                    out.push_back(kHex[(c >> 4) & 0xF]);
+                    out.push_back(kHex[c & 0xF]);
+                }
+                else {
+                    out.push_back(static_cast<char>(c));
+                }
         }
-        out.push_back(c);
     }
     return out;
 }
@@ -476,6 +495,11 @@ static void AppendChildrenReversed(const std::vector<LottieChild> &children, int
             items.push_back(WriteNodeGroup(
                 *it->group, inheritedColor, highlight, highlightColor, highlightsById, slotId, interactiveIds));
         }
+        else if (it->text) {
+            // Common text runs (D01) are serialized as independent "ty":5 layers by
+            // CollectTextRuns/WriteTextLayer, not as shapes inside this page's shape layer.
+            continue;
+        }
         else {
             items.push_back(WriteShapeGroup(it->shape, inheritedColor, highlight, highlightColor, slotId));
         }
@@ -522,6 +546,170 @@ static std::string WriteLayerShapes(const LottiePage &page, const HighlightsById
     AppendChildrenReversed(
         page.root->children, rootColor, nullptr, highlightColor, highlightsById, nullptr, interactiveIds, items);
     return JoinItems(items);
+}
+
+//----------------------------------------------------------------------------
+// Common text (D01, docs/plano/D01-texto-comum.md)
+//----------------------------------------------------------------------------
+
+// A LottieTextRun with its inherited color and effective bold/italic already resolved, the
+// same way ResolveColor's inheritedColor propagates down the tree for shapes.
+namespace {
+    struct ResolvedTextRun {
+        const LottieTextRun *run;
+        int color;
+        bool bold;
+        bool italic;
+    };
+} // namespace
+
+// One of the three vendored Liberation Serif styles (B03: Regular/Italic/Bold, Bold Italic
+// not covered). Bold+Italic together falls back to Bold, warning once per (bold, italic)
+// combination seen - same "unsupported value -> warn once + fallback" pattern as
+// ResolveColor's unsupported CSS color names.
+static std::string SelectFontStyleName(bool bold, bool italic)
+{
+    if (bold && italic) {
+        static bool warned = false;
+        if (!warned) {
+            LogWarning("LottieWriter: bold italic common text is not covered (B03); falling back to Bold.");
+            warned = true;
+        }
+        return "Bold";
+    }
+    if (bold) return "Bold";
+    if (italic) return "Italic";
+    return "Regular";
+}
+
+// SvgDeviceContext::Commit embeds a global CSS rule in every SVG output ("g.ending, g.fing,
+// g.reh, g.tempo {font-weight:bold;} g.dir, g.dynam, g.mNum {font-style:italic;} g.label
+// {font-weight:normal;}", svgdevicecontext.cpp) that some engraving code relies on instead of
+// setting FontInfo's own style/weight (e.g. a numeric tempo submark comes through as plain
+// italic FontInfo, visually bold only because of this class rule) - matched here the same way,
+// by LottieNode::className (identical string to the SVG "class" attribute, see StartGraphic),
+// so those runs come out visually the same as the SVG. Cumulative down the tree (mirrors CSS
+// inheritance): "label" always wins over an ancestor's bold, since it is meant to cancel it.
+namespace {
+    struct TextStyleContext {
+        bool bold = false;
+        bool italic = false;
+    };
+} // namespace
+
+static bool HasClassToken(const std::string &classNames, const char *token)
+{
+    std::istringstream iss(classNames);
+    std::string word;
+    while (iss >> word) {
+        if (word == token) return true;
+    }
+    return false;
+}
+
+static TextStyleContext ApplyClassStyleRule(const std::string &classNames, TextStyleContext ctx)
+{
+    if (HasClassToken(classNames, "ending") || HasClassToken(classNames, "fing") || HasClassToken(classNames, "reh")
+        || HasClassToken(classNames, "tempo")) {
+        ctx.bold = true;
+    }
+    if (HasClassToken(classNames, "dir") || HasClassToken(classNames, "dynam") || HasClassToken(classNames, "mNum")) {
+        ctx.italic = true;
+    }
+    if (HasClassToken(classNames, "label")) {
+        ctx.bold = false;
+    }
+    return ctx;
+}
+
+static std::string LiberationFontName(const std::string &styleName)
+{
+    return "LiberationSerif-" + styleName;
+}
+
+static int MapJustification(data_HORIZONTALALIGNMENT alignment)
+{
+    switch (alignment) {
+        case HORIZONTALALIGNMENT_center: return 2;
+        case HORIZONTALALIGNMENT_right: return 1;
+        default: return 0;
+    }
+}
+
+// Walks the same tree AppendChildrenReversed does for shapes, resolving each text run's
+// inherited color the way ResolveColor's inheritedColor already does, plus the CSS class rule
+// above, and skipping hidden subtrees exactly like AppendChildrenReversed. Traversal order does
+// not matter here: unlike shapes (composited within one "shapes" array, where paint order is
+// significant), every run becomes its own independent Lottie layer.
+static void CollectTextRuns(
+    const LottieNode &node, int inheritedColor, TextStyleContext styleCtx, std::vector<ResolvedTextRun> &out)
+{
+    const int nodeColor = ResolveColor(node.colorCss, inheritedColor);
+    styleCtx = ApplyClassStyleRule(node.className, styleCtx);
+    for (const LottieChild &child : node.children) {
+        if (child.group) {
+            if (child.group->hidden) continue;
+            CollectTextRuns(*child.group, nodeColor, styleCtx, out);
+        }
+        else if (child.text) {
+            const int color = (child.text->color == COLOR_NONE) ? nodeColor : child.text->color;
+            const bool bold = (child.text->weight == FONTWEIGHT_bold) || styleCtx.bold;
+            const bool italic
+                = (child.text->style == FONTSTYLE_italic) || (child.text->style == FONTSTYLE_oblique) || styleCtx.italic;
+            out.push_back({ &(*child.text), color, bold, italic });
+        }
+    }
+}
+
+// A common-text layer ("ty":5), sibling of the page's own shape layer ("ty":4). px/py/sPercent
+// are the exact same numbers already computed for that page's shape layer (see WriteAnimation's
+// page loop) - the run's own (page-px) origin is folded in the same way page.originX/Y already
+// is, so the run lands exactly where a shape vertex at that position would.
+static std::string WriteTextLayer(
+    const ResolvedTextRun &resolved, int ind, int parentInd, int ip, int op, double px, double py, double scale, double sPercent)
+{
+    const LottieTextRun &run = *resolved.run;
+    const double layerX = px + scale * run.origin.x;
+    const double layerY = py + scale * run.origin.y;
+
+    double r, g, b;
+    ColorIntToRgb01(resolved.color, r, g, b);
+
+    const std::string fontName = LiberationFontName(SelectFontStyleName(resolved.bold, resolved.italic));
+
+    std::ostringstream out;
+    out << "{\"ddd\":0,\"ind\":" << ind << ",\"ty\":5,\"nm\":\"text\",\"sr\":1,";
+    if (parentInd > 0) {
+        out << "\"parent\":" << parentInd << ",";
+    }
+    out << "\"ks\":{\"o\":{\"a\":0,\"k\":100},\"r\":{\"a\":0,\"k\":0},"
+        << "\"p\":{\"a\":0,\"k\":[" << FormatNumber(layerX) << "," << FormatNumber(layerY) << ",0]},"
+        << "\"a\":{\"a\":0,\"k\":[0,0,0]},"
+        << "\"s\":{\"a\":0,\"k\":[" << FormatNumber(sPercent) << "," << FormatNumber(sPercent) << ",100]}},"
+        << "\"ao\":0,\"t\":{\"d\":{\"k\":[{\"s\":{\"s\":" << FormatNumber(run.pointSize) << ",\"f\":\""
+        << EscapeJsonString(fontName) << "\",\"t\":\"" << EscapeJsonString(UTF32to8(run.text))
+        << "\",\"j\":" << MapJustification(run.alignment) << ",\"tr\":" << FormatNumber(run.letterSpacing)
+        << ",\"fc\":[" << FormatNumber(r) << "," << FormatNumber(g) << "," << FormatNumber(b)
+        << "]},\"t\":0}]}},\"ip\":" << ip << ",\"op\":" << op << ",\"st\":0,\"bm\":0}";
+    return out.str();
+}
+
+// Fixed fonts.list entries (B03: Regular/Italic/Bold always embedded together, whether or not
+// the piece actually uses each style - keeps package size predictable, see D01's "Decisões de
+// escopo"), format confirmed against the dotlottie-rs/ThorVG version vendored by `compare`
+// (deps/thorvg/test/resources/resolver.json and src/renderer/thorvg.rs's
+// asset_resolver_memoizes_loaded_fonts_and_failures test, both using "fName"/"fFamily"/
+// "fStyle"/"fPath"/"origin":3).
+static std::string WriteFontsList()
+{
+    static const char *const kStyles[] = { "Regular", "Italic", "Bold" };
+    std::vector<std::string> items;
+    for (const char *style : kStyles) {
+        const std::string fName = LiberationFontName(style);
+        items.push_back("{\"fName\":\"" + fName + "\",\"fFamily\":\"Liberation Serif\",\"fStyle\":\"" + style
+            + "\",\"fPath\":\"f/" + fName + ".ttf\",\"origin\":3}");
+    }
+    return "\"fonts\":{\"list\":[" + JoinItems(items) + "]}";
 }
 
 //----------------------------------------------------------------------------
@@ -572,7 +760,8 @@ static PageMetrics ComputePageMetrics(const LottiePage &page)
 
 std::string LottieWriter::WriteAnimation(const std::vector<const LottiePage *> &pages, const std::string &name,
     const std::vector<LottieHighlightGroup> &highlightGroups, int highlightColor,
-    const std::unordered_set<std::string> &interactiveIds, const LottiePageTurnLayout &pageTurn, double peekFraction)
+    const std::unordered_set<std::string> &interactiveIds, const LottiePageTurnLayout &pageTurn, double peekFraction,
+    bool embedCommonText)
 {
     int w = 0;
     int h = 0;
@@ -628,15 +817,21 @@ std::string LottieWriter::WriteAnimation(const std::vector<const LottiePage *> &
     }
 
     // Reserved layer indices for the camera rig (C04): "ind" 1 is the camera itself when
-    // pageTurn.enabled, so page layers start at 2 instead of 1 in that case.
+    // pageTurn.enabled, so page layers start at 2 instead of 1 in that case. Common-text
+    // layers (D01) are allocated after every camera/page "ind" already in use, in a single
+    // counter running across all pages (not reset per page).
     const int cameraInd = 1;
     const int firstPageInd = pageTurn.enabled ? 2 : 1;
+    int nextTextInd = firstPageInd + pageCount;
 
     std::ostringstream out;
     out.imbue(std::locale::classic());
     out << "{\"v\":\"5.7.0\",\"fr\":30,\"ip\":0,\"op\":" << op << ",\"w\":" << w << ",\"h\":" << h << ",\"nm\":\""
-        << EscapeJsonString(name) << "\",\"ddd\":0,\"assets\":[],\"markers\":[" << JoinItems(markerItems)
-        << "],\"layers\":[";
+        << EscapeJsonString(name) << "\",\"ddd\":0,\"assets\":[]";
+    if (embedCommonText) {
+        out << "," << WriteFontsList();
+    }
+    out << ",\"markers\":[" << JoinItems(markerItems) << "],\"layers\":[";
 
     bool needComma = false;
     if (pageTurn.enabled) {
@@ -688,6 +883,15 @@ std::string LottieWriter::WriteAnimation(const std::vector<const LottiePage *> &
             << "\"ao\":0,\"shapes\":[" << WriteLayerShapes(page, highlightsById, highlightColor, interactiveIds)
             << "],"
             << "\"ip\":" << pageIp << ",\"op\":" << pageOp << ",\"st\":0,\"bm\":0}";
+
+        if (embedCommonText) {
+            std::vector<ResolvedTextRun> textRuns;
+            CollectTextRuns(*page.root, ResolveColor(page.root->colorCss, COLOR_BLACK), TextStyleContext{}, textRuns);
+            const int parentInd = pageTurn.enabled ? cameraInd : 0;
+            for (const ResolvedTextRun &resolved : textRuns) {
+                out << "," << WriteTextLayer(resolved, nextTextInd++, parentInd, pageIp, pageOp, px, py, m.scale, s);
+            }
+        }
     }
 
     out << "]}";

@@ -163,6 +163,13 @@ private:
     void AddShape(LottieShape &&shape);
 
     /**
+     * Insert a common text run into the current node, mirroring AddShape (D01, see
+     * docs/plano/D01-texto-comum.md) - simple append, since text runs are serialized as
+     * independent Lottie layers and do not participate in the shapes paint-order search.
+     */
+    void AddTextRun(LottieTextRun &&run);
+
+    /**
      * Build a filled/stroked Path shape for one glyph, positioned at (x, y) and scaled per
      * the current font, exactly as SvgDeviceContext::DrawMusicText positions its <use>
      * elements. Shared by DrawMusicText and the SMuFL-font branch of DrawText.
@@ -205,12 +212,6 @@ private:
     data_HORIZONTALALIGNMENT m_textAlignment = HORIZONTALALIGNMENT_left;
     double m_textChunkWidth = 0.0;
     std::vector<LottieShape> m_textChunkShapes;
-
-    /**
-     * Count of non-SMuFL text runs skipped by DrawText (pending D-TEXTO), reported and reset
-     * in EndPage.
-     */
-    unsigned int m_skippedTextRuns = 0;
 };
 
 } // namespace vrv

@@ -240,7 +240,14 @@ Decisões **já tomadas** (não reabrir): ver "Decisões arquiteturais já tomad
 | [C04](C04-paginas-virada.md) | Páginas e virada estilo Synthesia (trilha horizontal + câmera + `sm_page`); reintegra M2/M3 na partitura inteira no pacote `dotlottie` final | A12, A13, C01, C02, C03 | — | concluído |
 | [C05](C05-host-simulado-timemap.md) | Host simulado com timemap real (`verovio -t timemap` → roteiro de `compare sm-render`), `compare/scripts/sm-playback.sh` | A12, A13, B01, C01-C04 | — | concluído |
 | [C06](C06-opcoes-cor-duracao.md) | Opções de CLI para cor/duração do destaque e da virada de página | C02, C04 | — | concluído |
-| [D00](D00-fase-d-esboco.md) | Fase D (paridade completa) — esboço a detalhar | A13, B03 | — (D-TEXTO já decidido) | pendente |
+| [D00](D00-fase-d-esboco.md) | Fase D (paridade completa) — esboço a detalhar | A13, B03 | — (D-TEXTO já decidido) | concluído (reescrito em D01-D06) |
+| [D01](D01-texto-comum.md) | Texto comum: Liberation Serif embutida (T1), camada de texto nativa `ty:5` | A10, B03 | — (T1 já decidido) | concluído (ver "Notas de execução" — achado importante: % de divergência do corpus não caiu como esperado, causa é a ferramenta de comparação, não o exportador) |
+| [D01-2](D01-2-controle-de-fonte-na-comparacao.md) | Tarefa paralela: `compare svg-to-png` fixar a fonte (Liberation Serif) via `fontdb::set_serif_family`, independente do sistema — hoje `--font` sozinho não muda nada | D01, A05 | — (fonte já decidida em B03; só a ferramenta de comparação) | pendente |
+| [D02](D02-drawsvgshape.md) | `DrawSvgShape` (SVG embutido no MEI) | A08 | — | pendente |
+| [D03](D03-drawgraphicuri.md) | `DrawGraphicUri` (imagens raster) | — | vale a pena implementar? qual resolução de `target`? | bloqueado (decisão) |
+| [D04](D04-rotategraphic.md) | `RotateGraphic` — confirmar sinal e pivô da rotação | — | — | pendente |
+| [D05](D05-casos-de-borda-estilo.md) | Casos de borda de estilo (opacidade, tracejado, visibilidade, cue) | A06, A09, A10 | — | pendente |
+| [D06](D06-tamanho-do-arquivo.md) | Tamanho do arquivo — reuso de glifos repetidos | D01, A13 | remedir e perguntar antes de decidir a técnica | bloqueado (remedir após D01) |
 | [E00](E00-bindings-opcional.md) | Bindings JS/Python (opcional) | A12 | — | opcional |
 
 Ordem sugerida: A01 → A02 → A03 → A04 → A05 → A06 → A07 → A08 → A09 → A10 →

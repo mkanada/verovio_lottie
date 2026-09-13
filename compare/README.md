@@ -119,3 +119,51 @@ chamadas retornam erro, em vez de abortar — replicando o padrão usado no
 próprio exemplo oficial da lib (`examples/simple_player.rs`, que usa `let _ =
 player.set_frame(...)`). Se você mexer nesse código, não troque os avisos por
 `?`/`.unwrap()` sem reler esta seção.
+
+## Pegadinha do `resvg`: texto comum centralizado/à direita com `<title>`
+## aninhado mede a largura errado (achado em D01)
+
+Descoberta ao validar `docs/plano/D01-texto-comum.md` (texto comum embutido
+no Lottie): o SVG do Verovio marca elementos com `@label` (títulos de
+página, nome do compositor, etc.) assim —
+`<tspan x=".." text-anchor="middle|end"><title class="labelAttr">rótulo</title>
+<tspan>...texto de verdade...</tspan></tspan>` — e o `resvg` (via
+`svg-to-png`), ao medir a largura do texto para aplicar o `text-anchor`,
+**inclui erroneamente o `<title>` aninhado na medição**, produzindo uma
+largura muito maior que a real e jogando a maior parte do texto pra fora da
+página (cortado à esquerda, no caso de `middle`/`end`). Reproduzido de forma
+isolada e mínima (com e sem o `<title>` aninhado, mesmo `text-anchor`) —
+não é um bug de posicionamento do exportador dotLottie: o `.lottie` gerado
+está corretamente centralizado/alinhado à direita na mesma coordenada `x`
+que o próprio SVG declara; é o PNG de *referência* que sai errado para
+esse elemento específico.
+
+Efeito prático: qualquer `compare diff`/`compare-page.sh`/`compare-corpus.sh`
+envolvendo texto comum centralizado ou alinhado à direita com `@label`
+(basicamente todo título de página e nome de compositor do corpus) vai
+mostrar uma divergência grande e enganosa ali, mesmo quando o Lottie está
+visualmente correto — teve impacto mensurável real no corpus completo em
+D01 (ver "Notas de execução" daquele passo). Ainda **sem workaround**
+implementado aqui; se for preciso medir esse texto com precisão no futuro,
+os caminhos mais óbvios são (a) contornar o bug pré-processando o SVG antes
+do `svg-to-png` (remover o `<title>` aninhado desses `tspan`s), ou
+(b) investigar/reportar o bug no próprio `resvg`.
+
+## Pegadinha adicional: `--font` não força o `resvg` a trocar a fonte de
+## "Times, serif" (achado em D01)
+
+Também descoberto em D01: `fc-match "Times, serif"` neste ambiente resolve
+para **Nimbus Roman**, não para a Liberation Serif que o exportador dotLottie
+embute de verdade no pacote (T1, `docs/plano/decisoes/B03-texto.md`). Tentar
+`compare svg-to-png --font <LiberationSerif-*.ttf>` para igualar as fontes
+**não teve efeito nenhum** no PNG gerado (byte a byte idêntico com e sem a
+flag) — o fontconfig/`resvg` deste ambiente continua preferindo a Nimbus
+Roman já registrada no sistema para a família genérica "Times, serif",
+independente de quais arquivos são carregados via `--font`. Consequência:
+mesmo com posição/tamanho/estilo perfeitos, texto comum vai sempre comparar
+contornos de **fontes fisicamente diferentes** entre SVG e Lottie (ao
+contrário de glifos SMuFL, que usam a mesma geometria "assada" nos dois
+lados) — isso por si só já produz uma faixa de divergência de pixels maior
+que ruído simples de antialiasing. Não investigado mais a fundo (precisaria
+mexer na resolução de fontes do `resvg`/numa config de fontconfig isolada
+para este binário `compare`).

@@ -9,6 +9,7 @@
 #define __VRV_LOTTIE_GEOMETRY_H__
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -57,6 +58,22 @@ struct LottieShape {
     double gapLength = 0.0;
 };
 
+/**
+ * A run of non-SMuFL ("common") text, e.g. a title, tempo mark or fingering, built by
+ * LottieDeviceContext::DrawText (D01, docs/plano/D01-texto-comum.md) and serialized by
+ * LottieWriter as a native Lottie text layer ("ty":5) instead of glyph shapes.
+ */
+struct LottieTextRun {
+    std::u32string text;
+    Point origin; // anchor (page px), before any alignment offset
+    data_HORIZONTALALIGNMENT alignment = HORIZONTALALIGNMENT_left;
+    double pointSize = 0.0; // same unit space as MakeGlyphShape (already page px)
+    double letterSpacing = 0.0;
+    data_FONTSTYLE style = FONTSTYLE_NONE;
+    data_FONTWEIGHT weight = FONTWEIGHT_NONE;
+    int color = COLOR_NONE; // COLOR_NONE = inherit, same convention as LottieShape::fillColor
+};
+
 //----------------------------------------------------------------------------
 // LottieNode, LottieChild, LottiePage
 //----------------------------------------------------------------------------
@@ -65,7 +82,8 @@ struct LottieNode;
 
 struct LottieChild {
     std::unique_ptr<LottieNode> group; // non-null = subgroup
-    LottieShape shape; // used when group == nullptr
+    std::optional<LottieTextRun> text; // set = common text run; otherwise a shape
+    LottieShape shape; // used when group == nullptr and text == nullopt
 };
 
 struct LottieNode {

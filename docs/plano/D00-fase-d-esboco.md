@@ -1,10 +1,18 @@
 # D00 — Fase D (paridade visual completa): esboço a detalhar
 
-**Status:** bloqueado até A13 (relatório de paridade) e D-TEXTO (memorando B03).
+**Status:** A13 e D-TEXTO concluídos. Este esboço foi reescrito nos passos
+executáveis [D01](D01-texto-comum.md)…[D06](D06-tamanho-do-arquivo.md), no
+formato dos passos A/C, e a tabela do `README.md` do plano já reflete isso.
+Este arquivo fica só como registro histórico do levantamento original.
 
-Antes de executar, transformar cada item abaixo — e cada categoria de
-`docs/plano/relatorio-paridade.md` — num passo `D01…Dn`, no formato dos passos A,
-e atualizar a tabela do README do plano.
+D01-D06 verificados nesta sessão contra o estado real do código vendorizado
+(`verovio/`) e do corpus (`corpus/`), não só por leitura do esboço abaixo —
+em particular: opacidade/tracejado/visibilidade (D05) e rotação (D04) já têm
+os campos correspondentes implementados na IR e no writer desde A06/A02, mas
+nunca foram exercitados visualmente por nenhum critério de aceite anterior;
+`DrawSvgShape`/`DrawGraphicUri`/`RotateGraphic` (D02-D04) não têm nenhuma
+cobertura no corpus atual (`corpus/mei`, `corpus/musicxml`), então dependem
+de MEIs mínimos criados em `compare/out/`.
 
 ## Itens já conhecidos
 

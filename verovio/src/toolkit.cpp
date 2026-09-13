@@ -12,8 +12,10 @@
 #include <algorithm>
 #include <cassert>
 #include <cctype>
+#include <fstream>
 #include <locale>
 #include <regex>
+#include <sstream>
 #include <unordered_set>
 
 //----------------------------------------------------------------------------
@@ -1844,6 +1846,69 @@ static int ParseLottieHighlightColor(const std::string &hex, int defaultColor)
     return static_cast<int>(std::stoul(hex, nullptr, 16));
 }
 
+// The "lottie" JSON format (CLI debug tool, A04) has nowhere to embed a .ttf (D01, see
+// docs/plano/D01-texto-comum.md's "Decisões de escopo"), so common text runs collected by
+// LottieDeviceContext are silently dropped there - RenderToDotLottieFile/
+// RenderToDotLottieHighlightFile pass embedCommonText=true to LottieWriter::WriteAnimation
+// instead. This replaces the aggregate warning LottieDeviceContext::EndPage used to print
+// itself before D01 moved that decision to the writer/Toolkit boundary.
+static unsigned int CountTextRuns(const LottieNode &node)
+{
+    unsigned int count = 0;
+    for (const LottieChild &child : node.children) {
+        if (child.group) {
+            count += CountTextRuns(*child.group);
+        }
+        else if (child.text) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+static void WarnIfTextRunsSkipped(const LottiePage &page)
+{
+    const unsigned int textRuns = CountTextRuns(*page.root);
+    if (textRuns > 0) {
+        LogWarning(
+            "Toolkit: %u common text run(s) not rendered ('lottie' format cannot embed fonts; use 'dotlottie').",
+            textRuns);
+    }
+}
+
+// Reads a whole file's raw bytes into a std::string, binary-safe like ZipFileWriter::AddFile
+// (filereader.cpp) - used to embed the vendored Liberation Serif .ttf files (D01).
+static bool ReadBinaryFile(const std::string &path, std::string &out)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) return false;
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    out = buffer.str();
+    return true;
+}
+
+// Embeds the three vendored Liberation Serif styles (D01, B03's decision: Regular+Italic+Bold
+// always embedded together, whether or not the piece uses each one) into a dotLottie package's
+// f/ directory, read from <resourcePath>/text/LiberationSerif-<Style>.ttf - same
+// GetPath() + "/text/" + name pattern Resources::LoadFont already uses for Times*.xml
+// (resources.cpp:430).
+static void EmbedCommonTextFonts(ZipFileWriter &zip, const std::string &resourcePath)
+{
+    static const char *const kStyles[] = { "Regular", "Italic", "Bold" };
+    for (const char *style : kStyles) {
+        const std::string fileName = std::string("LiberationSerif-") + style + ".ttf";
+        std::string bytes;
+        if (ReadBinaryFile(resourcePath + "/text/" + fileName, bytes)) {
+            zip.AddFile("f/" + fileName, bytes);
+        }
+        else {
+            LogWarning(
+                "Toolkit: could not read font '%s' for embedding; common text may not render.", fileName.c_str());
+        }
+    }
+}
+
 std::string Toolkit::RenderToLottieAnimation()
 {
     this->ResetLogBuffer();
@@ -1858,6 +1923,7 @@ std::string Toolkit::RenderToLottieAnimation()
     std::vector<const LottiePage *> pages;
     for (const LottiePage &page : lottie.GetPages()) {
         pages.push_back(&page);
+        WarnIfTextRunsSkipped(page);
     }
 
     return LottieWriter::WriteAnimation(pages, "score");
@@ -1916,10 +1982,11 @@ bool Toolkit::RenderToDotLottieFile(const std::string &filename)
         pages, highlightEnd + 1, kPeekDurationFrames, kCoverDurationFrames, kPageGapFrames);
 
     const std::string animation = LottieWriter::WriteAnimation(pages, "score", groups, highlightColor,
-        interactiveIds, pageTurn, m_options->m_lottiePagePeekFraction.GetValue());
+        interactiveIds, pageTurn, m_options->m_lottiePagePeekFraction.GetValue(), /*embedCommonText=*/true);
 
     ZipFileWriter zip;
     zip.AddFile("a/score.json", animation);
+    EmbedCommonTextFonts(zip, this->GetResourcePath());
 
     const LottieStateMachine highlightSm = LottieHighlightBuilder::BuildStateMachine(groups, "score", "sm_highlight");
     zip.AddFile("s/sm_highlight.json", LottieWriter::WriteStateMachine(highlightSm));
@@ -1978,8 +2045,8 @@ bool Toolkit::RenderToDotLottieHighlightFile(const std::string &filename, int pa
         interactiveIds.insert(group.memberIds.begin(), group.memberIds.end());
     }
 
-    const std::string animation
-        = LottieWriter::WriteAnimation({ &page }, "score", groups, highlightColor, interactiveIds);
+    const std::string animation = LottieWriter::WriteAnimation({ &page }, "score", groups, highlightColor,
+        interactiveIds, {}, 0.08, /*embedCommonText=*/true);
     const LottieStateMachine stateMachine = LottieHighlightBuilder::BuildStateMachine(groups, "score", "sm_highlight");
 
     ZipFileWriter zip;
@@ -1988,6 +2055,7 @@ bool Toolkit::RenderToDotLottieHighlightFile(const std::string &filename, int pa
             { "sm_highlight" }, "sm_highlight"));
     zip.AddFile("a/score.json", animation);
     zip.AddFile("s/sm_highlight.json", LottieWriter::WriteStateMachine(stateMachine));
+    EmbedCommonTextFonts(zip, this->GetResourcePath());
 
     return zip.Save(filename);
 }
@@ -2001,7 +2069,10 @@ std::string Toolkit::RenderToLottie(int pageNo)
 
     if (!this->RenderToDeviceContext(pageNo, &lottie)) return "";
 
-    return LottieWriter::WriteAnimation({ &lottie.GetPages().front() }, "verovio");
+    const LottiePage &page = lottie.GetPages().front();
+    WarnIfTextRunsSkipped(page);
+
+    return LottieWriter::WriteAnimation({ &page }, "verovio");
 }
 
 bool Toolkit::RenderToLottieFile(const std::string &filename, int pageNo)
