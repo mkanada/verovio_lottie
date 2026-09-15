@@ -312,6 +312,14 @@ literalmente no plano, foram necessários:
    do compositor/título (centralizado/à direita) — todos com o glifo,
    estilo e posição corretos por inspeção visual direta de recortes PNG.
 
+   **Correção (D01-4):** para o itálico, "estilo e posição corretos" não se
+   sustentou. A face selecionada era a certa (`LiberationSerif-Italic`),
+   mas o ThorVG do `dotlottie-rs` aplicava um itálico sintético por cima
+   (inclinação dupla + deslocamento horizontal, letras "grudadas"), e a
+   inspeção de recortes não pegou. O exportador sempre esteve certo; a
+   correção foi no ThorVG. Ver
+   [D01-4](D01-4-italico-sintetico-thorvg.md).
+
 ### Achado importante: a % de divergência do corpus **não caiu** como A13/B03
 ### previam — precisa de leitura antes de decidir os próximos passos
 
@@ -393,6 +401,14 @@ aplicadas): 0,1002%–0,5997%, média 0,2977% — ainda não no nível de ruído
 puro de antialiasing (categoria 2 de `relatorio-paridade.md`), mas as duas
 causas conhecidas e não relacionadas ao exportador já foram isoladas e
 corrigidas do lado da ferramenta.
+
+**Atualização 2 (D01-4):** havia uma terceira causa, também fora do
+exportador: o ThorVG usado pelo `dotlottie-rs` aplicava itálico sintético por
+cima da `LiberationSerif-Italic` embutida (inclinação dupla em todo texto
+itálico). Corrigido numa cópia local do ThorVG
+([D01-4](D01-4-italico-sintetico-thorvg.md)). Corpus, medido de novo com e
+sem a correção: 0,0196%–0,5219%/média 0,2293% → **0,0135%–0,4153%/média
+0,1318%**.
 
 **Tamanho do pacote** (10 peças do corpus, antes eram os números "sem
 texto" de A13):

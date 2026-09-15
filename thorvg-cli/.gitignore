@@ -1,0 +1,5 @@
+# Build do meson/ninja do ThorVG local (../thorvg) - regenerável via build.sh.
+/build/
+
+# Binário compilado - regenerável via build.sh.
+/bin/

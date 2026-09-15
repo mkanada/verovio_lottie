@@ -1,0 +1,752 @@
+mod wgpu_native {
+    use std::env;
+    use std::fs;
+    use std::io;
+    use std::path::PathBuf;
+    const WGPU_NATIVE_VERSION: &str = "v29.0.1.1";
+
+    /// wgpu-native is linked *dynamically* only on the Apple platforms where we ship
+    /// a shared `WgpuNative` framework: macOS and iOS (device + simulator); every
+    /// non-Apple platform links statically. Mac Catalyst is excluded — it builds
+    /// software-only (no `tvg-wg`), so it never links wgpu at all; the `macabi`
+    /// guard keeps it out of the dynamic path defensively.
+    pub fn links_dynamically(target: &str) -> bool {
+        (target.contains("apple-darwin") || target.contains("apple-ios"))
+            && !target.contains("macabi")
+    }
+
+    fn artifact_name(target: &str) -> Option<&'static str> {
+        match target {
+            // macOS
+            "aarch64-apple-darwin" => Some("wgpu-macos-aarch64-release"),
+            "x86_64-apple-darwin" => Some("wgpu-macos-x86_64-release"),
+            // iOS
+            "aarch64-apple-ios" => Some("wgpu-ios-aarch64-release"),
+            "aarch64-apple-ios-sim" => Some("wgpu-ios-aarch64-simulator-release"),
+            "x86_64-apple-ios" => Some("wgpu-ios-x86_64-simulator-release"),
+            // Linux
+            "aarch64-unknown-linux-gnu" => Some("wgpu-linux-aarch64-release"),
+            "x86_64-unknown-linux-gnu" => Some("wgpu-linux-x86_64-release"),
+            // Android
+            "aarch64-linux-android" => Some("wgpu-android-aarch64-release"),
+            "x86_64-linux-android" => Some("wgpu-android-x86_64-release"),
+            "i686-linux-android" => Some("wgpu-android-i686-release"),
+            "armv7-linux-androideabi" => Some("wgpu-android-armv7-release"),
+            _ => None,
+        }
+    }
+
+    /// Returns the persistent cache directory: `$CARGO_HOME/wgpu-native-cache/{version}/`.
+    fn cache_dir() -> PathBuf {
+        let cargo_home = env::var("CARGO_HOME").unwrap_or_else(|_| {
+            let home = env::var("HOME").expect("Neither CARGO_HOME nor HOME is set");
+            format!("{home}/.cargo")
+        });
+        PathBuf::from(cargo_home)
+            .join("wgpu-native-cache")
+            .join(WGPU_NATIVE_VERSION)
+    }
+
+    fn download_file(url: &str, dest: &std::path::Path) -> io::Result<()> {
+        let response = minreq::get(url)
+            .send()
+            .map_err(|e| io::Error::other(format!("Download failed: {url}: {e}")))?;
+        if response.status_code < 200 || response.status_code >= 300 {
+            return Err(io::Error::other(format!(
+                "Download failed: {url}: HTTP {}",
+                response.status_code
+            )));
+        }
+        fs::write(dest, response.as_bytes())?;
+        Ok(())
+    }
+
+    fn extract_zip(zip_path: &std::path::Path, dest_dir: &std::path::Path) -> io::Result<()> {
+        fs::create_dir_all(dest_dir)?;
+        let file = fs::File::open(zip_path)?;
+        let mut archive = zip::ZipArchive::new(file)
+            .map_err(|e| io::Error::other(format!("Failed to read zip: {e}")))?;
+        for i in 0..archive.len() {
+            let mut entry = archive
+                .by_index(i)
+                .map_err(|e| io::Error::other(format!("Failed to read zip entry: {e}")))?;
+            let out_path = dest_dir.join(entry.mangled_name());
+            if entry.is_dir() {
+                fs::create_dir_all(&out_path)?;
+            } else {
+                if let Some(parent) = out_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                let mut out_file = fs::File::create(&out_path)?;
+                io::copy(&mut entry, &mut out_file)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Main entry point. Returns `(include_path, lib_path)`.
+    ///
+    /// Priority chain:
+    /// 1. `WGPU_NATIVE_INCLUDE` + `WGPU_NATIVE_LIB` env vars
+    /// 2. Cached download at `$CARGO_HOME/wgpu-native-cache/{version}/{artifact}/`
+    /// 3. Fresh download from GitHub
+    ///
+    pub fn ensure_available(target: &str) -> io::Result<(PathBuf, PathBuf)> {
+        println!("cargo:rerun-if-env-changed=WGPU_NATIVE_INCLUDE");
+        println!("cargo:rerun-if-env-changed=WGPU_NATIVE_LIB");
+
+        // Priority 1: env var overrides
+        if let (Ok(inc), Ok(lib)) = (env::var("WGPU_NATIVE_INCLUDE"), env::var("WGPU_NATIVE_LIB")) {
+            return Ok((PathBuf::from(inc), PathBuf::from(lib)));
+        }
+
+        let artifact = artifact_name(target).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::Unsupported,
+                format!("No wgpu-native artifact for target: {target}"),
+            )
+        })?;
+
+        let cache = cache_dir().join(artifact);
+
+        let dylib_required = links_dynamically(target);
+        // Priority 2: cached download
+        let cache_complete = cache.join("include/webgpu/webgpu.h").exists()
+            && cache.join("lib/libwgpu_native.a").exists()
+            && (!dylib_required || cache.join("lib/libwgpu_native.dylib").exists());
+        if cache_complete {
+            return Ok((cache.join("include"), cache.join("lib")));
+        }
+
+        // Priority 3: download
+        let url = format!(
+            "https://github.com/gfx-rs/wgpu-native/releases/download/{WGPU_NATIVE_VERSION}/{artifact}.zip"
+        );
+
+        let download_dir = cache_dir();
+        fs::create_dir_all(&download_dir)?;
+        let zip_path = download_dir.join(format!("{artifact}.zip"));
+
+        download_file(&url, &zip_path)?;
+        extract_zip(&zip_path, &cache)?;
+
+        let _ = fs::remove_file(&zip_path);
+
+        Ok((cache.join("include"), cache.join("lib")))
+    }
+}
+
+mod thorvg {
+    use std::env;
+    use std::fs::{self, create_dir_all, OpenOptions};
+    use std::io::{self, Write};
+    use std::path::{Path, PathBuf};
+
+    const EMSCRIPTEN_VERSION: &str = "3.1.70";
+    // ffi/webgpu-headers submodule rev of the pinned wgpu-native release
+    const WEBGPU_HEADERS_REV: &str = "673658b";
+
+    /// Returns the C++ standard library that needs to be linked for the current platform.
+    ///
+    /// This is necessary because when we compile C++ code (either from source or use
+    /// prebuilt libraries), we need to link against the platform's C++ standard library
+    /// to resolve C++ symbols like std::string, std::mutex, etc.
+    fn get_cpp_standard_library() -> Vec<String> {
+        let host_target =
+            std::env::var("HOST").expect("HOST environment variable should be set by Cargo");
+
+        if is_apple_platform(&host_target) {
+            // macOS and iOS use libc++ as the C++ standard library
+            vec![String::from("c++")]
+        } else if is_unix_platform() {
+            // Linux and other Unix systems typically use libstdc++
+            vec![String::from("stdc++")]
+        } else {
+            // Windows and other platforms - C++ stdlib is handled differently
+            // (usually linked automatically by the compiler/linker)
+            vec![]
+        }
+    }
+
+    /// Check if we're building for an Apple platform (macOS, iOS, etc.)
+    fn is_apple_platform(host_target: &str) -> bool {
+        host_target.contains("apple")
+    }
+
+    /// Check if we're building for a Unix-like platform
+    fn is_unix_platform() -> bool {
+        std::env::var("CARGO_CFG_UNIX").is_ok()
+    }
+
+    const EXCLUDED_CPP: &[&str] = &["tvgMediaLoader.cpp"];
+
+    pub(super) fn collect_files(dir: &str) -> Vec<String> {
+        let mut files = Vec::new();
+
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.extension().is_some_and(|e| e == "cpp") {
+                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    if EXCLUDED_CPP.contains(&name) {
+                        continue;
+                    }
+                    files.push(path.to_string_lossy().into_owned());
+                }
+            }
+        }
+
+        files
+    }
+
+    /// Track ThorVG changes                                                
+    fn emit_rerun_directives(dirs: &[&str], extensions: &[&str]) {
+        for dir in dirs {
+            println!("cargo:rerun-if-changed={dir}");
+            if let Ok(entries) = fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file()
+                        && path
+                            .extension()
+                            .is_some_and(|e| extensions.iter().any(|ext| e == *ext))
+                    {
+                        println!("cargo:rerun-if-changed={}", path.display());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Verify that the CXX compiler is clang++ >= 16 (required for wasm32-unknown-unknown).
+    fn verify_clang_version(compiler: &str) {
+        let output = std::process::Command::new(compiler)
+            .arg("--version")
+            .output()
+            .unwrap_or_else(|e| {
+                panic!(
+                    "failed to run `{compiler} --version`: {e}\n\
+                    Set CXX to a clang++ >= 16 with the wasm32-unknown-unknown \
+                    backend (e.g. Homebrew LLVM: CXX=/opt/homebrew/opt/llvm/bin/clang++)"
+                )
+            });
+        let stdout = std::str::from_utf8(&output.stdout).unwrap_or("");
+        let stderr = std::str::from_utf8(&output.stderr).unwrap_or("");
+        let version = stdout
+            .lines()
+            .chain(stderr.lines())
+            .find_map(|l| {
+                l.split_once("clang version ").and_then(|(_, ver)| {
+                    ver.split_once('.')
+                        .and_then(|(major, _)| major.parse::<u32>().ok())
+                })
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "failed to parse version from `{compiler} --version`\n\
+                    exit status: {}\nstdout:\n{stdout}\nstderr:\n{stderr}\n\
+                    Ensure CXX points to a working clang++ >= 16.",
+                    output.status
+                )
+            });
+        if version < 16 {
+            panic!(
+                "clang++ {version} is too old; wasm32-unknown-unknown requires clang++ >= 16.\n\
+                Set CXX to a newer clang++ (e.g. /opt/homebrew/opt/llvm/bin/clang++)"
+            );
+        }
+    }
+
+    /// Download and cache Emscripten system headers (libc++, musl, WebGPU) into `out_dir`.
+    /// Returns the path to the emscripten directory.
+    fn setup_emscripten_headers(out_dir: &Path) -> io::Result<PathBuf> {
+        let emscripten_dir = out_dir.join("emscripten");
+
+        if !emscripten_dir.exists() {
+            let url = format!(
+                "https://github.com/emscripten-core/emscripten/archive/refs/tags/{EMSCRIPTEN_VERSION}.zip"
+            );
+            let response = minreq::get(&url)
+                .send()
+                .map_err(|e| io::Error::other(format!("Failed to download emscripten: {e}")))?;
+            if response.status_code < 200 || response.status_code >= 300 {
+                return Err(io::Error::other(format!(
+                    "Failed to download emscripten: HTTP {}",
+                    response.status_code
+                )));
+            }
+            let zip_path = out_dir.join("emscripten.zip");
+            fs::write(&zip_path, response.as_bytes())?;
+
+            let file = fs::File::open(&zip_path)?;
+            let mut archive = zip::ZipArchive::new(file)
+                .map_err(|e| io::Error::other(format!("Failed to open emscripten zip: {e}")))?;
+            archive
+                .extract(out_dir)
+                .map_err(|e| io::Error::other(format!("Failed to extract emscripten zip: {e}")))?;
+            fs::remove_file(&zip_path)?;
+            fs::rename(
+                out_dir.join(format!("emscripten-{EMSCRIPTEN_VERSION}")),
+                &emscripten_dir,
+            )?;
+
+            // Write stub html5_webgl.h (ThorVG's GL engine needs this)
+            let html5_webgl_path = emscripten_dir.join("system/include/emscripten/html5_webgl.h");
+            fs::write(
+                &html5_webgl_path,
+                "#pragma once\n\
+                typedef void* EMSCRIPTEN_WEBGL_CONTEXT_HANDLE;\n\
+                typedef int   EMSCRIPTEN_RESULT;\n\
+                #ifdef __cplusplus\n\
+                extern \"C\" {\n\
+                #endif\n\
+                EMSCRIPTEN_WEBGL_CONTEXT_HANDLE emscripten_webgl_get_current_context(void);\n\
+                EMSCRIPTEN_RESULT emscripten_webgl_make_context_current(EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context);\n\
+                #ifdef __cplusplus\n\
+                }\n\
+                #endif\n",
+            )?;
+        }
+
+        // WebGPU headers are keyed by rev so a WEBGPU_HEADERS_REV bump refreshes a cached OUT_DIR
+        let webgpu_header_dir = emscripten_dir.join("system/include/webgpu");
+        let rev_marker = webgpu_header_dir.join(".rev");
+        if fs::read_to_string(&rev_marker).ok().as_deref() != Some(WEBGPU_HEADERS_REV) {
+            fs::create_dir_all(&webgpu_header_dir)?;
+            let webgpu_url = format!(
+                "https://raw.githubusercontent.com/webgpu-native/webgpu-headers/{WEBGPU_HEADERS_REV}/webgpu.h"
+            );
+            let wgpu_resp = minreq::get(&webgpu_url)
+                .send()
+                .map_err(|e| io::Error::other(format!("Failed to download webgpu.h: {e}")))?;
+            fs::write(webgpu_header_dir.join("webgpu.h"), wgpu_resp.as_bytes())?;
+            fs::write(&rev_marker, WEBGPU_HEADERS_REV)?;
+        }
+
+        Ok(emscripten_dir)
+    }
+
+    pub fn build() -> io::Result<()> {
+        let target_triple = env::var("TARGET").unwrap_or_default();
+        let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+        let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+
+        let is_wasm = target_triple.starts_with("wasm32-unknown-");
+        let is_wasm_unknown = target_triple == "wasm32-unknown-unknown";
+
+        let compiler = env::var("CXX").ok();
+        let is_windows_msvc = target_triple.contains("windows-msvc");
+
+        // wasm32-unknown-unknown needs clang++ >= 16 and emscripten system headers
+        if is_wasm_unknown {
+            verify_clang_version(compiler.as_deref().unwrap_or("clang++"));
+        }
+        let emscripten_dir = if is_wasm_unknown {
+            Some(setup_emscripten_headers(&out_dir)?)
+        } else {
+            None
+        };
+
+        // C++ standard library linking
+        println!("cargo:rerun-if-env-changed=CXXSTDLIB");
+        let cxxstdlib = env::var("CXXSTDLIB").ok();
+        if is_wasm_unknown && cxxstdlib.is_none() {
+            // Prevent cc from linking stdc++ — no C++ runtime available
+            env::set_var("CXXSTDLIB", "");
+        } else if cxxstdlib.as_deref() == Some("") {
+            // External CXXSTDLIB="" — skip manual C++ stdlib linking (cc crate also respects this)
+        } else {
+            get_cpp_standard_library()
+                .iter()
+                .for_each(|lib| println!("cargo:rustc-link-lib=dylib={lib}"));
+        }
+
+        // Source directories (identical for all targets)
+        let mut src = vec![
+            "deps/thorvg/inc",
+            "deps/thorvg/src/common",
+            "deps/thorvg/src/bindings/capi",
+            "deps/thorvg/src/loaders/lottie",
+            "deps/thorvg/src/loaders/raw",
+            "deps/thorvg/src/renderer",
+        ];
+
+        // Web-only: cpp/ defines ThorVG's MediaLoader::gen() over a Rust player.
+        let video = env::var("CARGO_FEATURE_VIDEO").is_ok() && is_wasm;
+        if video {
+            src.push("deps/thorvg/src/loaders/media");
+            src.push("cpp");
+        }
+
+        // --- config.h generation ---
+        let mut thorvg_config_h = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(out_dir.join("config.h"))?;
+
+        writeln!(thorvg_config_h, "#define THORVG_VERSION_STRING \"1.1.1\"")?;
+        writeln!(thorvg_config_h, "#define THORVG_LOTTIE_LOADER_SUPPORT")?;
+        if video {
+            writeln!(thorvg_config_h, "#define THORVG_MEDIA_LOADER_SUPPORT")?;
+        }
+        writeln!(thorvg_config_h, "#define TVG_STATIC")?;
+        writeln!(thorvg_config_h, "#define WIN32_LEAN_AND_MEAN")?;
+
+        if !is_wasm {
+            writeln!(thorvg_config_h, "#define THORVG_FILE_IO_SUPPORT 1")?;
+        }
+
+        if cfg!(feature = "tvg-log") {
+            writeln!(thorvg_config_h, "#define THORVG_LOG_ENABLED")?;
+        }
+
+        if cfg!(feature = "tvg-threads") && !is_wasm {
+            writeln!(thorvg_config_h, "#define THORVG_THREAD_SUPPORT")?;
+        }
+
+        let tvg_sw_enabled = cfg!(feature = "tvg-cpu");
+        if tvg_sw_enabled {
+            writeln!(thorvg_config_h, "#define THORVG_CPU_ENGINE_SUPPORT")?;
+            src.push("deps/thorvg/src/renderer/cpu_engine");
+        }
+
+        if cfg!(feature = "tvg-gl") || cfg!(feature = "tvg-wg") {
+            src.push("deps/thorvg/src/renderer/gpu_engine");
+        }
+
+        if cfg!(feature = "tvg-gl") {
+            writeln!(thorvg_config_h, "#define THORVG_GL_ENGINE_SUPPORT")?;
+            src.push("deps/thorvg/src/renderer/gpu_engine/gl");
+
+            let is_android = target_triple.contains("android");
+            if is_wasm || is_android {
+                writeln!(thorvg_config_h, "#define THORVG_GL_TARGET_GLES 1")?;
+            } else {
+                writeln!(thorvg_config_h, "#define THORVG_GL_TARGET_GL 1")?;
+            }
+        }
+
+        if cfg!(feature = "tvg-wg") {
+            writeln!(thorvg_config_h, "#define THORVG_WG_ENGINE_SUPPORT")?;
+            src.push("deps/thorvg/src/renderer/gpu_engine/wg");
+        }
+
+        if cfg!(feature = "tvg-jpg") {
+            writeln!(thorvg_config_h, "#define THORVG_JPG_LOADER_SUPPORT")?;
+            src.push("deps/thorvg/src/loaders/jpg");
+        }
+
+        if cfg!(feature = "tvg-png") {
+            writeln!(thorvg_config_h, "#define THORVG_PNG_LOADER_SUPPORT")?;
+            src.push("deps/thorvg/src/loaders/png");
+        }
+
+        if cfg!(feature = "tvg-webp") {
+            writeln!(thorvg_config_h, "#define THORVG_WEBP_LOADER_SUPPORT")?;
+            src.push("deps/thorvg/src/loaders/webp");
+            src.push("deps/thorvg/src/loaders/webp/dec");
+            src.push("deps/thorvg/src/loaders/webp/dsp");
+            src.push("deps/thorvg/src/loaders/webp/utils");
+            src.push("deps/thorvg/src/loaders/webp/webp");
+        }
+
+        if cfg!(any(feature = "tvg-ttf", feature = "tvg-otf")) {
+            writeln!(thorvg_config_h, "#define THORVG_SFNT_LOADER_SUPPORT")?;
+            src.push("deps/thorvg/src/loaders/sfnt");
+        }
+
+        if cfg!(feature = "tvg-ttf") {
+            writeln!(thorvg_config_h, "#define THORVG_TTF_LOADER_SUPPORT")?;
+        }
+
+        if cfg!(feature = "tvg-otf") {
+            writeln!(thorvg_config_h, "#define THORVG_OTF_LOADER_SUPPORT")?;
+        }
+
+        if cfg!(feature = "tvg-lottie-expressions") {
+            writeln!(thorvg_config_h, "#define THORVG_LOTTIE_EXPRESSIONS_SUPPORT")?;
+            src.push("deps/thorvg/src/loaders/lottie/jerryscript/jerry-core/api");
+            src.push("deps/thorvg/src/loaders/lottie/jerryscript/jerry-core/ecma/base");
+            src.push("deps/thorvg/src/loaders/lottie/jerryscript/jerry-core/ecma/builtin-objects");
+            src.push(
+                "deps/thorvg/src/loaders/lottie/jerryscript/jerry-core/ecma/builtin-objects/typedarray",
+            );
+            src.push("deps/thorvg/src/loaders/lottie/jerryscript/jerry-core/ecma/operations");
+            src.push("deps/thorvg/src/loaders/lottie/jerryscript/jerry-core/include");
+            src.push("deps/thorvg/src/loaders/lottie/jerryscript/jerry-core/jcontext");
+            src.push("deps/thorvg/src/loaders/lottie/jerryscript/jerry-core/jmem");
+            src.push("deps/thorvg/src/loaders/lottie/jerryscript/jerry-core/jrt");
+            src.push("deps/thorvg/src/loaders/lottie/jerryscript/jerry-core/lit");
+            src.push("deps/thorvg/src/loaders/lottie/jerryscript/jerry-core/parser/js");
+            src.push("deps/thorvg/src/loaders/lottie/jerryscript/jerry-core/parser/regexp");
+            src.push("deps/thorvg/src/loaders/lottie/jerryscript/jerry-core/vm");
+            src.push("deps/thorvg/src/loaders/lottie/jerryscript/jerry-port/common");
+        }
+
+        // SIMD — skip entirely for wasm32-unknown-unknown (no SIMD support there yet)
+        let tvg_simd_enabled = cfg!(feature = "tvg-simd");
+        let mut simd_flags: Vec<&str> = Vec::new();
+        if tvg_sw_enabled && tvg_simd_enabled && !is_wasm_unknown {
+            if target_triple.contains("x86_64")
+                || target_triple.contains("i686")
+                || target_triple.contains("i586")
+            {
+                writeln!(thorvg_config_h, "#define THORVG_AVX_VECTOR_SUPPORT")?;
+                simd_flags.push("-mavx");
+            } else if target_triple.contains("aarch64") {
+                writeln!(thorvg_config_h, "#define THORVG_NEON_VECTOR_SUPPORT")?;
+            } else if target_triple.contains("armv7") {
+                writeln!(thorvg_config_h, "#define THORVG_NEON_VECTOR_SUPPORT")?;
+                simd_flags.push("-mfpu=neon");
+            }
+        }
+
+        thorvg_config_h.flush()?;
+        drop(thorvg_config_h);
+
+        if cfg!(all(feature = "tracking_allocator", feature = "tvg")) {
+            let alloc_header_path = out_dir.join("tvgAllocator.h");
+            let mut alloc_h = OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .open(&alloc_header_path)?;
+
+            write!(
+                alloc_h,
+                r#"
+#ifndef _TVG_ALLOCATOR_H_
+#define _TVG_ALLOCATOR_H_
+
+#include <cstdlib>
+#include <cstddef>
+
+extern "C" {{
+    void* tvg_malloc(size_t size);
+    void* tvg_calloc(size_t nmemb, size_t size);
+    void* tvg_realloc(void* ptr, size_t size);
+    void  tvg_free(void* ptr);
+}}
+
+namespace tvg
+{{
+    template<typename T = void>
+    static inline T* malloc(size_t size)
+    {{
+        return static_cast<T*>(tvg_malloc(size));
+    }}
+
+    template<typename T = void>
+    static inline T* calloc(size_t nmem, size_t size)
+    {{
+        return static_cast<T*>(tvg_calloc(nmem, size));
+    }}
+
+    template<typename T = void>
+    static inline T* realloc(T* ptr, size_t size)
+    {{
+        return static_cast<T*>(tvg_realloc(static_cast<void*>(ptr), size));
+    }}
+
+    template<typename T = void>
+    static inline void free(T* ptr)
+    {{
+        tvg_free(static_cast<void*>(ptr));
+    }}
+}}
+
+#endif //_TVG_ALLOCATOR_H_
+"#
+            )?;
+            alloc_h.flush()?;
+        }
+
+        emit_rerun_directives(&src, &["h", "cpp"]);
+
+        // --- cc::Build setup ---
+        let mut cc_build = cc::Build::new();
+        // Only override compiler when CXX is explicitly set or for non-MSVC targets.
+        // For MSVC targets, let cc crate auto-detect cl.exe.
+        if let Some(ref comp) = compiler {
+            cc_build.compiler(comp);
+        } else if !is_windows_msvc {
+            cc_build.compiler("clang++");
+        }
+
+        cc_build
+            .std("c++14")
+            .cpp(true)
+            .include(&out_dir)
+            .includes(&src)
+            .files(
+                src.iter()
+                    .flat_map(|dir| collect_files(dir))
+                    .collect::<Vec<_>>(),
+            )
+            .warnings(false);
+
+        // On Windows MSVC, prevent <windows.h> min/max macros from colliding
+        // with std::min/std::max used in thorvg. Define as compiler flag so it
+        // applies before any headers are included.
+        if is_windows_msvc {
+            cc_build.define("NOMINMAX", None);
+        }
+
+        // wasm32-unknown-unknown: add emscripten system headers and defines
+        if let Some(ref emscripten_dir) = emscripten_dir {
+            cc_build
+                .include(emscripten_dir.join("system/lib/libcxx/include"))
+                .include(emscripten_dir.join("system/lib/libc/musl/arch/emscripten"))
+                .include(emscripten_dir.join("system/lib/libc/musl/include"))
+                .include(emscripten_dir.join("system/include"))
+                .include(emscripten_dir.join("system/lib/pthread"))
+                .define("__EMSCRIPTEN__", None);
+
+            let target_features_str = env::var("CARGO_CFG_TARGET_FEATURE").unwrap_or_default();
+            if target_features_str.split(',').any(|f| f == "atomics") {
+                cc_build.flag("-matomics");
+            }
+            if target_features_str.split(',').any(|f| f == "bulk-memory") {
+                cc_build.flag("-mbulk-memory");
+            }
+        }
+
+        if is_wasm_unknown {
+            cc_build.flag("-fno-exceptions").flag("-fno-rtti");
+        }
+
+        // wgpu-native — not used for wasm32-unknown-unknown
+        if cfg!(feature = "tvg-wg") && !is_wasm_unknown {
+            let (wgpu_include_path, wgpu_lib_path) =
+                crate::wgpu_native::ensure_available(&target_triple)
+                    .expect("Failed to obtain wgpu-native. Set WGPU_NATIVE_LIB and WGPU_NATIVE_INCLUDE env vars, or check your network connection.");
+
+            cc_build.include(&wgpu_include_path);
+
+            // Force-include a generated header that redirects ThorVG's
+            // wgpuSurfaceConfigure calls through our shim
+            // (_tvg_wgpu_surface_configure_fixup in src/c_api/apple.rs). ThorVG
+            // hardcodes WGPUPresentMode_Immediate, but iOS Metal surfaces only
+            // support Fifo and wgpu-native hard-errors on an unsupported present
+            // mode; the shim rewrites it to Fifo on iOS before forwarding.
+            if target_triple.contains("apple") || target_triple.contains("ios") {
+                let fixup_header = out_dir.join("tvg_wgpu_surface_fixup.h");
+                fs::write(
+                    &fixup_header,
+                    "#pragma once\n\
+                     #if defined(__APPLE__) && !defined(__EMSCRIPTEN__)\n\
+                     #  define wgpuSurfaceConfigure _tvg_wgpu_surface_configure_fixup\n\
+                     #endif\n",
+                )?;
+                cc_build
+                    .flag("-include")
+                    .flag(fixup_header.to_str().unwrap());
+            }
+
+            let abs_lib_path = wgpu_lib_path
+                .canonicalize()
+                .expect("Failed to canonicalize wgpu lib path");
+
+            println!("cargo:rustc-link-search=native={}", abs_lib_path.display());
+            if crate::wgpu_native::links_dynamically(&target_triple) {
+                println!("cargo:rustc-link-lib=dylib=wgpu_native");
+            } else {
+                println!("cargo:rustc-link-lib=static=wgpu_native");
+            }
+
+            if target_triple.contains("apple") || target_triple.contains("ios") {
+                println!("cargo:rustc-link-lib=framework=Metal");
+                println!("cargo:rustc-link-lib=framework=QuartzCore");
+                println!("cargo:rustc-link-lib=framework=Foundation");
+                if target_triple.contains("darwin") {
+                    println!("cargo:rustc-link-lib=framework=AppKit");
+                } else {
+                    println!("cargo:rustc-link-lib=framework=UIKit");
+                }
+            } else if target_triple.contains("linux") && !target_triple.contains("android") {
+                println!("cargo:rustc-link-lib=vulkan");
+            }
+
+            bindgen::Builder::default()
+                .header(wgpu_include_path.join("webgpu/wgpu.h").to_str().unwrap())
+                .allowlist_type("WGPU.*")
+                .allowlist_function("wgpu.*")
+                .allowlist_var("WGPU_.*")
+                .ctypes_prefix("std::os::raw")
+                .layout_tests(false)
+                .use_core()
+                .generate()
+                .expect("Failed to generate wgpu bindings")
+                .write_to_file(
+                    PathBuf::from(env::var("OUT_DIR").unwrap()).join("wgpu_bindings.rs"),
+                )?;
+        }
+
+        if cfg!(feature = "tvg-gl") {
+            let is_android = target_triple.contains("android");
+            if is_android {
+                cc_build.define("THORVG_GL_TARGET_GLES", "1");
+            }
+        }
+
+        for flag in &simd_flags {
+            cc_build.flag(flag);
+        }
+
+        if cfg!(feature = "tvg-threads")
+            && !is_wasm
+            && env::var("CARGO_CFG_UNIX").is_ok()
+            && !target_triple.contains("apple")
+            && !target_triple.contains("android")
+        {
+            cc_build.flag("-pthread");
+            println!("cargo:rustc-link-lib=pthread");
+        }
+
+        if cfg!(feature = "tvg-lottie-expressions") && cfg!(feature = "tvg-threads") {
+            cc_build.define("JERRY_EXTERNAL_CONTEXT", "1");
+        }
+
+        if cfg!(all(feature = "tracking_allocator", feature = "tvg")) {
+            let alloc_header = out_dir.join("tvgAllocator.h");
+            cc_build.flag(format!("-include{}", alloc_header.display()));
+        }
+
+        cc_build.compile("thorvg");
+
+        println!("cargo:root={}", out_dir.display());
+
+        // Generate ThorVG C API bindings
+        let bindings = bindgen::Builder::default()
+            .header("deps/thorvg/src/bindings/capi/thorvg_capi.h")
+            .generate()
+            .expect("Failed to generate bindings");
+        bindings.write_to_file(PathBuf::from(env::var("OUT_DIR").unwrap()).join("bindings.rs"))?;
+
+        // cbindgen — only for native builds with c_api feature
+        if cfg!(feature = "c_api") && !is_wasm_unknown {
+            create_dir_all(PathBuf::from(&crate_dir).join("build")).unwrap();
+            let header_path = PathBuf::from(&crate_dir).join("build/dotlottie_player.h");
+            let config_path = PathBuf::from(&crate_dir).join("cbindgen.toml");
+            let config = cbindgen::Config::from_file(config_path).unwrap();
+
+            cbindgen::Builder::new()
+                .with_crate(crate_dir)
+                .with_config(config)
+                .generate()
+                .expect("Unable to generate bindings")
+                .write_to_file(header_path);
+        }
+
+        Ok(())
+    }
+}
+
+fn main() -> std::io::Result<()> {
+    if cfg!(feature = "tvg") {
+        thorvg::build()?;
+    }
+
+    Ok(())
+}

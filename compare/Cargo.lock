@@ -599,7 +599,6 @@ checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 [[package]]
 name = "dotlottie-rs"
 version = "0.1.58"
-source = "git+https://github.com/LottieFiles/dotlottie-rs#eb44c991e5e2bc08daa5081caf750d1324f31d62"
 dependencies = [
  "bindgen 0.72.1",
  "cbindgen",

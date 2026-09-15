@@ -72,6 +72,13 @@ projeto. Por isso a raiz do repositório é dividida assim:
   `dotlottie-rs`, o runtime oficial da LottieFiles) e gera uma imagem de
   diferença pixel a pixel entre os dois. Ver `compare/README.md` para uso e
   detalhes/pegadinhas da implementação.
+- **`thorvg/`** e **`dotlottie-rs/`** — cópias vendorizadas do ThorVG (motor
+  de renderização usado pelo `dotlottie-rs`) e do próprio `dotlottie-rs`,
+  que o `compare/` compila no lugar das versões originais. Existem para
+  manter correções próprias no ThorVG que o upstream ainda não tem (ver
+  `thorvg/VEROVIO_LOTTIE.md`).
+- **`thorvg-cli/`** — renderiza o SVG e o `.lottie` pelo mesmo ThorVG local,
+  para isolar diferenças de motor (ver `thorvg-cli/README.md`).
 - Outros diretórios a criar conforme o projeto avança, na raiz (fora de
   `verovio/`): qualquer utilitário adicional de suporte ao desenvolvimento
   que não faça parte do Verovio em si.
@@ -158,7 +165,9 @@ tooling e documentação próprios deste projeto (na raiz).
   de cada resultado e comparar as imagens.
 - ✅ Ferramenta escolhida e implementada em `compare/`: `resvg` para SVG→PNG e
   `dotlottie-rs` (runtime oficial da LottieFiles, com renderer de software
-  via ThorVG) para Lottie/dotLottie→PNG. A comparação em si (`compare diff`)
+  via ThorVG) para Lottie/dotLottie→PNG — ambos como cópias locais
+  (`dotlottie-rs/`, `thorvg/`), com uma correção própria no ThorVG para
+  texto em itálico (`docs/plano/D01-4-italico-sintetico-thorvg.md`). A comparação em si (`compare diff`)
   gera uma imagem de diferença (fundo esmaecido + pixels divergentes em
   vermelho) mais estatísticas no terminal — a decisão de "passou/falhou"
   continua sendo visual/manual, sem limiar automático definido ainda.

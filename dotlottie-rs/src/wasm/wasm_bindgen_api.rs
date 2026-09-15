@@ -1,0 +1,1597 @@
+use std::ffi::CString;
+
+#[cfg(not(any(feature = "webgl", feature = "webgpu")))]
+use js_sys::Uint8Array;
+use js_sys::{Array, Float32Array, Object};
+use wasm_bindgen::prelude::*;
+
+#[cfg(not(any(feature = "webgl", feature = "webgpu")))]
+use crate::ColorSpace;
+use crate::{Fit, Layout, Mode as PlayerMode, Player, Rgba, Segment};
+
+// ─── Renderer mode ───────────────────────────────────────────────────────────
+
+// Renderer mode constants are no longer needed — the renderer variant is
+// determined at compile time via feature flags (webgl, webgpu, or software).
+
+// ─── StoredGlContext — wraps the pointer in webgl_stubs::CONTEXT_PTR ────────
+//
+// ThorVG's GL renderer checks `context != nullptr` before proceeding, and
+// later compares `mContext` against `emscripten_webgl_get_current_context()`.
+// Both must match the pointer stored by `webgl_stubs::set_webgl_context`, so
+// we cannot pass null_mut here.
+
+#[cfg(feature = "webgl")]
+struct NullGlDisplay;
+
+#[cfg(feature = "webgl")]
+impl crate::GlDisplay for NullGlDisplay {
+    fn as_ptr(&self) -> *mut std::ffi::c_void {
+        std::ptr::null_mut()
+    }
+    unsafe fn from_ptr(_ptr: *mut std::ffi::c_void) -> Self {
+        NullGlDisplay
+    }
+}
+
+#[cfg(feature = "webgl")]
+struct NullGlSurface;
+
+#[cfg(feature = "webgl")]
+impl crate::GlSurface for NullGlSurface {
+    fn as_ptr(&self) -> *mut std::ffi::c_void {
+        std::ptr::null_mut()
+    }
+    unsafe fn from_ptr(_ptr: *mut std::ffi::c_void) -> Self {
+        NullGlSurface
+    }
+}
+
+#[cfg(feature = "webgl")]
+struct StoredGlContext;
+
+#[cfg(feature = "webgl")]
+impl crate::GlContext for StoredGlContext {
+    fn as_ptr(&self) -> *mut std::ffi::c_void {
+        super::webgl_stubs::context_ptr()
+    }
+    unsafe fn from_ptr(_ptr: *mut std::ffi::c_void) -> Self {
+        StoredGlContext
+    }
+}
+
+// ─── WgpuPtr helpers ────────────────────────────────────────────────────────
+
+#[cfg(feature = "webgpu")]
+struct WgpuDevicePtr(usize);
+#[cfg(feature = "webgpu")]
+impl crate::WgpuDevice for WgpuDevicePtr {
+    fn as_ptr(&self) -> *mut std::ffi::c_void {
+        self.0 as *mut std::ffi::c_void
+    }
+    unsafe fn from_ptr(ptr: *mut std::ffi::c_void) -> Self {
+        WgpuDevicePtr(ptr as usize)
+    }
+}
+
+// In browser WebGPU there is no JS GPUInstance object.  ThorVG only stores
+// the instance pointer for equality comparison (to detect device changes), so
+// any stable non-null sentinel works.
+#[cfg(feature = "webgpu")]
+static WGPU_INSTANCE_SENTINEL: u8 = 0;
+
+#[cfg(feature = "webgpu")]
+struct WgpuSentinelInstance;
+#[cfg(feature = "webgpu")]
+impl crate::WgpuInstance for WgpuSentinelInstance {
+    fn as_ptr(&self) -> *mut std::ffi::c_void {
+        &raw const WGPU_INSTANCE_SENTINEL as *mut std::ffi::c_void
+    }
+    unsafe fn from_ptr(_ptr: *mut std::ffi::c_void) -> Self {
+        WgpuSentinelInstance
+    }
+}
+
+#[cfg(feature = "webgpu")]
+struct WgpuSurfacePtr(usize);
+#[cfg(feature = "webgpu")]
+impl crate::WgpuTarget for WgpuSurfacePtr {
+    fn as_ptr(&self) -> *mut std::ffi::c_void {
+        self.0 as *mut std::ffi::c_void
+    }
+    unsafe fn from_ptr(ptr: *mut std::ffi::c_void) -> Self {
+        WgpuSurfacePtr(ptr as usize)
+    }
+}
+
+// ─── Exported enums ───────────────────────────────────────────────────────────
+
+/// Playback direction / bounce mode.
+#[wasm_bindgen]
+#[derive(Clone, Copy, PartialEq)]
+pub enum Mode {
+    Forward = 0,
+    Reverse = 1,
+    Bounce = 2,
+    ReverseBounce = 3,
+}
+
+impl From<Mode> for PlayerMode {
+    fn from(m: Mode) -> Self {
+        match m {
+            Mode::Forward => PlayerMode::Forward,
+            Mode::Reverse => PlayerMode::Reverse,
+            Mode::Bounce => PlayerMode::Bounce,
+            Mode::ReverseBounce => PlayerMode::ReverseBounce,
+        }
+    }
+}
+
+impl From<PlayerMode> for Mode {
+    fn from(m: PlayerMode) -> Self {
+        match m {
+            PlayerMode::Forward => Mode::Forward,
+            PlayerMode::Reverse => Mode::Reverse,
+            PlayerMode::Bounce => Mode::Bounce,
+            PlayerMode::ReverseBounce => Mode::ReverseBounce,
+        }
+    }
+}
+
+/// Current status of the animation player.
+#[wasm_bindgen]
+#[derive(Clone, Copy, PartialEq)]
+pub enum Status {
+    Idle = 0,
+    Playing = 1,
+    Paused = 2,
+    Stopped = 3,
+    Tweening = 4,
+}
+
+impl From<crate::Status> for Status {
+    fn from(s: crate::Status) -> Self {
+        match s {
+            crate::Status::Idle => Status::Idle,
+            crate::Status::Playing => Status::Playing,
+            crate::Status::Paused => Status::Paused,
+            crate::Status::Stopped => Status::Stopped,
+            crate::Status::Tweening => Status::Tweening,
+        }
+    }
+}
+
+// ─── JS object helpers ────────────────────────────────────────────────────────
+
+fn js_obj_with_type(type_name: &str) -> Object {
+    let obj = Object::new();
+    let _ = js_sys::Reflect::set(&obj, &"type".into(), &type_name.into());
+    obj
+}
+
+fn set_str(obj: &Object, key: &str, v: &str) {
+    let _ = js_sys::Reflect::set(obj, &key.into(), &v.into());
+}
+
+fn set_f64(obj: &Object, key: &str, v: f64) {
+    let _ = js_sys::Reflect::set(obj, &key.into(), &JsValue::from_f64(v));
+}
+
+fn set_bool(obj: &Object, key: &str, v: bool) {
+    let _ = js_sys::Reflect::set(obj, &key.into(), &JsValue::from_bool(v));
+}
+
+fn vec_to_f32array(v: Vec<f32>) -> Float32Array {
+    let arr = Float32Array::new_with_length(v.len() as u32);
+    for (i, &x) in v.iter().enumerate() {
+        arr.set_index(i as u32, x);
+    }
+    arr
+}
+
+fn fit_from_str(s: &str) -> Fit {
+    match s {
+        "contain" => Fit::Contain,
+        "fill" => Fit::Fill,
+        "cover" => Fit::Cover,
+        "fit-width" => Fit::FitWidth,
+        "fit-height" => Fit::FitHeight,
+        _ => Fit::None,
+    }
+}
+
+fn fit_to_str(f: Fit) -> &'static str {
+    match f {
+        Fit::Contain => "contain",
+        Fit::Fill => "fill",
+        Fit::Cover => "cover",
+        Fit::FitWidth => "fit-width",
+        Fit::FitHeight => "fit-height",
+        Fit::None => "none",
+    }
+}
+
+// ─── Main wrapper struct ──────────────────────────────────────────────────────
+//
+// Field order matters for Drop: `state_machine` MUST come before `player` so
+// the engine (which holds a raw pointer into player) is dropped first.
+//
+// `player` is wrapped in `ManuallyDrop` so that our explicit `Drop` impl can
+// control the exact moment ThorVG is destroyed — specifically, BEFORE the
+// WebGL/WebGPU context is released.  ThorVG's renderer cleanup calls GL
+// functions (glDeleteTextures, glDeleteFramebuffers, …), which require a live
+// context.  If we released the context first (as the old code did) those calls
+// hit a null pointer and trap.
+
+#[wasm_bindgen]
+pub struct DotLottiePlayerWasm {
+    /// Active state machine engine.  Declared before `player` to ensure it is
+    /// dropped first (it holds a raw mutable pointer into `player`).
+    #[cfg(feature = "state-machines")]
+    state_machine: Option<crate::StateMachineEngine<'static>>,
+    player: std::mem::ManuallyDrop<Player>,
+    /// Owned pixel buffer for the SW renderer (ARGB8888 u32 values).
+    #[cfg(not(any(feature = "webgl", feature = "webgpu")))]
+    sw_buffer: Vec<u32>,
+    width: u32,
+    height: u32,
+    #[cfg(feature = "webgl")]
+    gl_context_ptr: usize,
+    #[cfg(feature = "webgpu")]
+    wg_device_ptr: usize,
+    #[cfg(feature = "webgpu")]
+    wg_surface_ptr: usize,
+}
+
+#[wasm_bindgen]
+impl DotLottiePlayerWasm {
+    // ── Constructor ───────────────────────────────────────────────────────────
+
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        console_error_panic_hook::set_once();
+
+        DotLottiePlayerWasm {
+            #[cfg(feature = "state-machines")]
+            state_machine: None,
+            player: std::mem::ManuallyDrop::new(Player::new()),
+            #[cfg(not(any(feature = "webgl", feature = "webgpu")))]
+            sw_buffer: Vec::new(),
+            width: 0,
+            height: 0,
+            #[cfg(feature = "webgl")]
+            gl_context_ptr: 0,
+            #[cfg(feature = "webgpu")]
+            wg_device_ptr: 0,
+            #[cfg(feature = "webgpu")]
+            wg_surface_ptr: 0,
+        }
+    }
+
+    // ── Renderer context setup ────────────────────────────────────────────────
+
+    /// Store the WebGL2 context.  Call before `load_animation`.
+    /// Each player instance owns its own context, enabling multiple
+    /// WebGL canvases simultaneously.
+    #[cfg(feature = "webgl")]
+    pub fn set_webgl_context(&mut self, ctx: web_sys::WebGl2RenderingContext) {
+        if self.gl_context_ptr != 0 {
+            unsafe {
+                super::webgl_stubs::drop_stored_context(
+                    self.gl_context_ptr as *mut web_sys::WebGl2RenderingContext,
+                );
+            }
+        }
+        let ptr = super::webgl_stubs::store_context(ctx);
+        self.gl_context_ptr = ptr as usize;
+        super::webgl_stubs::make_current(ptr);
+    }
+
+    /// Store the WebGPU device.  Call before `set_webgpu_surface` and `load_animation`.
+    #[cfg(feature = "webgpu")]
+    pub fn set_webgpu_device(&mut self, device: web_sys::GpuDevice) {
+        if self.wg_device_ptr != 0 {
+            unsafe {
+                drop(Box::from_raw(self.wg_device_ptr as *mut web_sys::GpuDevice));
+            }
+        }
+        self.wg_device_ptr = Box::into_raw(Box::new(device)) as usize;
+    }
+
+    /// Store the WebGPU canvas context (surface).  Call before `load_animation`.
+    #[cfg(feature = "webgpu")]
+    pub fn set_webgpu_surface(&mut self, surface: web_sys::GpuCanvasContext) {
+        if self.wg_surface_ptr != 0 {
+            unsafe {
+                drop(Box::from_raw(
+                    self.wg_surface_ptr as *mut web_sys::GpuCanvasContext,
+                ));
+            }
+        }
+        self.wg_surface_ptr = Box::into_raw(Box::new(surface)) as usize;
+    }
+
+    // ── GL context activation ─────────────────────────────────────────────────
+
+    /// Swap the global WebGL context to this instance's context.
+    /// Must be called before any operation that touches the GL pipeline.
+    #[cfg(feature = "webgl")]
+    fn activate_gl(&self) {
+        if self.gl_context_ptr != 0 {
+            super::webgl_stubs::make_current(
+                self.gl_context_ptr as *mut web_sys::WebGl2RenderingContext,
+            );
+        }
+    }
+
+    // ── Render-target setup ─────────────────────────────────────────────────
+
+    /// Set up (or resize) the OpenGL rendering target.
+    #[cfg(feature = "webgl")]
+    pub fn setup_gl_target(&mut self, width: u32, height: u32) -> bool {
+        self.activate_gl();
+        self.width = width;
+        self.height = height;
+        self.player
+            .set_gl_target(
+                &NullGlDisplay,
+                &NullGlSurface,
+                &StoredGlContext,
+                0,
+                width,
+                height,
+            )
+            .is_ok()
+    }
+
+    /// Set up (or resize) the WebGPU rendering target.
+    #[cfg(feature = "webgpu")]
+    pub fn setup_wg_target(&mut self, width: u32, height: u32) -> bool {
+        self.width = width;
+        self.height = height;
+        if self.wg_device_ptr == 0 || self.wg_surface_ptr == 0 {
+            return false;
+        }
+        self.player
+            .set_wg_target(
+                &WgpuDevicePtr(self.wg_device_ptr),
+                &WgpuSentinelInstance,
+                &WgpuSurfacePtr(self.wg_surface_ptr),
+                width,
+                height,
+                crate::WgpuTargetType::Surface,
+            )
+            .is_ok()
+    }
+
+    /// Set up (or resize) the software rendering target.
+    #[cfg(not(any(feature = "webgl", feature = "webgpu")))]
+    pub fn setup_sw_target(&mut self, width: u32, height: u32) -> bool {
+        self.width = width;
+        self.height = height;
+        let required = (width * height) as usize;
+        if self.sw_buffer.len() != required {
+            self.sw_buffer.resize(required, 0);
+        }
+        self.player
+            .set_sw_target(&mut self.sw_buffer, width, height, ColorSpace::ABGR8888S)
+            .is_ok()
+    }
+
+    // ── Loading ───────────────────────────────────────────────────────────────
+
+    /// Load a Lottie JSON animation.
+    ///
+    /// `setup_target` must have been called first.
+    pub fn load_animation(&mut self, data: &str) -> bool {
+        #[cfg(feature = "webgl")]
+        self.activate_gl();
+        let Ok(c_data) = CString::new(data) else {
+            return false;
+        };
+        self.player.load_animation_data(&c_data).is_ok()
+    }
+
+    /// Load a .lottie archive from raw bytes.
+    ///
+    /// `setup_target` must have been called first.
+    #[cfg_attr(not(feature = "dotlottie"), allow(unused_variables))]
+    pub fn load_dotlottie_data(&mut self, data: &[u8]) -> bool {
+        #[cfg(not(feature = "dotlottie"))]
+        {
+            return false;
+        }
+        #[cfg(feature = "dotlottie")]
+        {
+            #[cfg(feature = "webgl")]
+            self.activate_gl();
+            self.player.load_dotlottie_data(data).is_ok()
+        }
+    }
+
+    /// Load an animation from an already-loaded .lottie archive by its ID.
+    ///
+    /// `setup_target` must have been called first.
+    #[cfg_attr(not(feature = "dotlottie"), allow(unused_variables))]
+    pub fn load_animation_from_id(&mut self, id: &str) -> bool {
+        #[cfg(not(feature = "dotlottie"))]
+        {
+            return false;
+        }
+        #[cfg(feature = "dotlottie")]
+        {
+            #[cfg(feature = "webgl")]
+            self.activate_gl();
+            let Ok(c_id) = CString::new(id) else {
+                return false;
+            };
+            self.player.load_animation(&c_id).is_ok()
+        }
+    }
+
+    // ── Render loop ───────────────────────────────────────────────────────────
+
+    /// Advance the animation by `dt` milliseconds and render if the frame changed.
+    /// Call once per `requestAnimationFrame`, passing the frame delta in milliseconds.
+    pub fn tick(&mut self, dt: f32) -> bool {
+        #[cfg(feature = "webgl")]
+        self.activate_gl();
+        self.player.tick(dt).unwrap_or(false)
+    }
+
+    /// Render the current frame without advancing time.
+    pub fn render(&mut self) -> bool {
+        #[cfg(feature = "webgl")]
+        self.activate_gl();
+        self.player.render().is_ok()
+    }
+
+    // ── SW pixel buffer ───────────────────────────────────────────────────────
+
+    /// Zero-copy `Uint8Array` view into WASM linear memory.
+    ///
+    /// **Use the returned array immediately.**  Do not store the reference across
+    /// any call that may reallocate the buffer (e.g. `resize` / `load_animation`
+    /// with different dimensions).
+    #[cfg(not(any(feature = "webgl", feature = "webgpu")))]
+    pub fn get_pixel_buffer(&self) -> Uint8Array {
+        let bytes = unsafe {
+            std::slice::from_raw_parts(
+                self.sw_buffer.as_ptr() as *const u8,
+                self.sw_buffer.len() * 4,
+            )
+        };
+        unsafe { Uint8Array::view(bytes) }
+    }
+
+    // ── Playback control ──────────────────────────────────────────────────────
+
+    pub fn play(&mut self) -> bool {
+        self.player.play().is_ok()
+    }
+    pub fn pause(&mut self) -> bool {
+        self.player.pause().is_ok()
+    }
+    pub fn stop(&mut self) -> bool {
+        self.player.stop().is_ok()
+    }
+
+    // ── State queries ─────────────────────────────────────────────────────────
+
+    pub fn status(&self) -> Status {
+        self.player.status().into()
+    }
+    pub fn is_complete(&self) -> bool {
+        self.player.is_complete()
+    }
+
+    // ── Frame queries ─────────────────────────────────────────────────────────
+
+    pub fn current_frame(&self) -> f32 {
+        self.player.current_frame()
+    }
+    pub fn total_frames(&self) -> f32 {
+        self.player.total_frames()
+    }
+    pub fn set_frame(&mut self, no: f32) -> bool {
+        self.player.set_frame(no).is_ok()
+    }
+
+    // ── Duration / loop queries ───────────────────────────────────────────────
+
+    pub fn duration(&self) -> f32 {
+        self.player.duration()
+    }
+    pub fn current_loop_count(&self) -> u32 {
+        self.player.current_loop_count()
+    }
+    pub fn reset_current_loop_count(&mut self) {
+        self.player.reset_current_loop_count();
+    }
+
+    // ── Size ──────────────────────────────────────────────────────────────────
+
+    pub fn width(&self) -> u32 {
+        self.player.size().0
+    }
+    pub fn height(&self) -> u32 {
+        self.player.size().1
+    }
+
+    /// `[width, height]` of the animation in its native coordinate space.
+    pub fn animation_size(&self) -> Float32Array {
+        vec_to_f32array(self.player.animation_size())
+    }
+
+    // ── Playback settings ─────────────────────────────────────────────────────
+
+    pub fn mode(&self) -> Mode {
+        self.player.mode().into()
+    }
+    pub fn set_mode(&mut self, mode: Mode) {
+        self.player.set_mode(mode.into());
+    }
+
+    pub fn speed(&self) -> f32 {
+        self.player.speed()
+    }
+    pub fn set_speed(&mut self, speed: f32) {
+        self.player.set_speed(speed);
+    }
+
+    pub fn loop_animation(&self) -> bool {
+        self.player.loop_animation()
+    }
+    pub fn set_loop(&mut self, v: bool) {
+        self.player.set_loop(v);
+    }
+
+    pub fn loop_count(&self) -> u32 {
+        self.player.loop_count()
+    }
+    pub fn set_loop_count(&mut self, n: u32) {
+        self.player.set_loop_count(n);
+    }
+
+    pub fn autoplay(&self) -> bool {
+        self.player.autoplay()
+    }
+    pub fn set_autoplay(&mut self, v: bool) {
+        self.player.set_autoplay(v);
+    }
+
+    pub fn use_frame_interpolation(&self) -> bool {
+        self.player.use_frame_interpolation()
+    }
+    pub fn set_use_frame_interpolation(&mut self, v: bool) {
+        self.player.set_use_frame_interpolation(v);
+    }
+
+    pub fn background_r(&self) -> u8 {
+        self.player.background().r
+    }
+
+    pub fn background_g(&self) -> u8 {
+        self.player.background().g
+    }
+
+    pub fn background_b(&self) -> u8 {
+        self.player.background().b
+    }
+
+    pub fn background_a(&self) -> u8 {
+        self.player.background().a
+    }
+
+    /// Set background colour. Pass `(0, 0, 0, 0)` to clear.
+    pub fn set_background(&mut self, r: u8, g: u8, b: u8, a: u8) -> bool {
+        self.player.set_background(Rgba::new(r, g, b, a)).is_ok()
+    }
+
+    pub fn set_quality(&mut self, quality: u8) -> bool {
+        self.player.set_quality(quality).is_ok()
+    }
+
+    // ── Segment ───────────────────────────────────────────────────────────────
+
+    pub fn segment_start(&self) -> f32 {
+        self.player.segment().map(|seg| seg.start).unwrap_or(0.0)
+    }
+    pub fn segment_end(&self) -> f32 {
+        self.player.segment().map(|seg| seg.end).unwrap_or(0.0)
+    }
+
+    pub fn set_segment(&mut self, start: f32, end: f32) -> bool {
+        self.player
+            .set_segment(Some(Segment { start, end }))
+            .is_ok()
+    }
+
+    pub fn clear_segment(&mut self) -> bool {
+        self.player.set_segment(None).is_ok()
+    }
+
+    // ── Layout ────────────────────────────────────────────────────────────────
+
+    /// Set the layout.
+    ///
+    /// `fit` is one of `"contain"`, `"fill"`, `"cover"`, `"fit-width"`,
+    /// `"fit-height"`, `"none"`.  `align_x` / `align_y` are in [0, 1].
+    pub fn set_layout(&mut self, fit: &str, align_x: f32, align_y: f32) -> bool {
+        self.player
+            .set_layout(Layout {
+                fit: fit_from_str(fit),
+                align: [align_x, align_y],
+            })
+            .is_ok()
+    }
+
+    pub fn layout_fit(&self) -> String {
+        fit_to_str(self.player.layout().fit).to_string()
+    }
+    pub fn layout_align_x(&self) -> f32 {
+        self.player.layout().align[0]
+    }
+    pub fn layout_align_y(&self) -> f32 {
+        self.player.layout().align[1]
+    }
+
+    // ── Viewport ──────────────────────────────────────────────────────────────
+
+    pub fn set_viewport(&mut self, x: i32, y: i32, w: i32, h: i32) -> bool {
+        self.player.set_viewport(x, y, w, h).is_ok()
+    }
+
+    // ── Slots ─────────────────────────────────────────────────────────────────
+
+    /// Set a color slot (`r`, `g`, `b` in [0, 1]).
+    pub fn set_color_slot(&mut self, id: &str, r: f32, g: f32, b: f32) -> bool {
+        self.player
+            .set_color_slot(id, crate::ColorSlot::new([r, g, b]))
+            .is_ok()
+    }
+
+    pub fn set_scalar_slot(&mut self, id: &str, value: f32) -> bool {
+        self.player
+            .set_scalar_slot(id, crate::ScalarSlot::new(value))
+            .is_ok()
+    }
+
+    pub fn set_text_slot(&mut self, id: &str, text: &str) -> bool {
+        self.player
+            .set_text_slot(id, crate::TextSlot::new(text.to_string()))
+            .is_ok()
+    }
+
+    pub fn set_vector_slot(&mut self, id: &str, x: f32, y: f32) -> bool {
+        self.player
+            .set_vector_slot(id, crate::VectorSlot::static_value([x, y]))
+            .is_ok()
+    }
+
+    pub fn set_position_slot(&mut self, id: &str, x: f32, y: f32) -> bool {
+        self.player
+            .set_position_slot(id, crate::PositionSlot::static_value([x, y]))
+            .is_ok()
+    }
+
+    /// Set an image slot from a source string (a `data:` URI, an `http(s)://`
+    /// URL, or a file in the package `i/` folder referenced by name).
+    pub fn set_image_slot(&mut self, id: &str, src: &str) -> bool {
+        self.player
+            .set_image_slot(id, crate::ImageSlot::from_src(src.to_string()))
+            .is_ok()
+    }
+
+    pub fn clear_slots(&mut self) -> bool {
+        self.player.clear_slots().is_ok()
+    }
+    pub fn clear_slot(&mut self, id: &str) -> bool {
+        self.player.clear_slot(id).is_ok()
+    }
+
+    /// Set multiple slots at once from a JSON string.
+    pub fn set_slots_str(&mut self, json: &str) -> bool {
+        self.player.set_slots_str(json).is_ok()
+    }
+
+    /// Set a single slot by ID from a JSON value string.
+    pub fn set_slot_str(&mut self, id: &str, json: &str) -> bool {
+        self.player.set_slot_str(id, json).is_ok()
+    }
+
+    /// Get the JSON value of a single slot by ID, or `undefined` if not found.
+    pub fn get_slot_str(&self, id: &str) -> Option<String> {
+        let s = self.player.get_slot_str(id);
+        if s.is_empty() {
+            None
+        } else {
+            Some(s)
+        }
+    }
+
+    /// Get all slots as a JSON object string.
+    pub fn get_slots_str(&self) -> String {
+        self.player.get_slots_str()
+    }
+
+    /// Get all slot IDs as a JS array.
+    pub fn get_slot_ids(&self) -> JsValue {
+        let arr = Array::new();
+        for id in self.player.get_slot_ids() {
+            arr.push(&id.as_str().into());
+        }
+        arr.into()
+    }
+
+    /// Get the type string of a slot, or `undefined` if not found.
+    pub fn get_slot_type(&self, id: &str) -> Option<String> {
+        let s = self.player.get_slot_type(id);
+        if s.is_empty() {
+            None
+        } else {
+            Some(s)
+        }
+    }
+
+    /// Reset a slot to its default value from the animation.
+    pub fn reset_slot(&mut self, id: &str) -> bool {
+        self.player.reset_slot(id).is_ok()
+    }
+
+    /// Reset all slots to their default values from the animation.
+    pub fn reset_slots(&mut self) -> bool {
+        self.player.reset_slots()
+    }
+
+    // ── Transform ─────────────────────────────────────────────────────────────
+
+    /// Returns the current affine transform as a flat `Float32Array`.
+    pub fn get_transform(&self) -> Float32Array {
+        vec_to_f32array(self.player.get_transform())
+    }
+
+    pub fn set_transform(&mut self, data: &[f32]) -> bool {
+        self.player.set_transform(data.to_vec()).is_ok()
+    }
+
+    // ── Markers ───────────────────────────────────────────────────────────────
+
+    /// Returns an array of `{ name, start, end }` objects.
+    pub fn markers(&self) -> JsValue {
+        let arr = Array::new();
+        for m in self.player.markers() {
+            let obj = Object::new();
+            let name_str: JsValue = m.name.to_string_lossy().as_ref().into();
+            let _ = js_sys::Reflect::set(&obj, &"name".into(), &name_str);
+            let _ = js_sys::Reflect::set(
+                &obj,
+                &"start".into(),
+                &JsValue::from_f64(m.segment.start as f64),
+            );
+            let _ = js_sys::Reflect::set(
+                &obj,
+                &"end".into(),
+                &JsValue::from_f64(m.segment.end as f64),
+            );
+            arr.push(&obj);
+        }
+        arr.into()
+    }
+
+    /// Returns an array of marker name strings.
+    pub fn marker_names(&self) -> JsValue {
+        let arr = Array::new();
+        for m in self.player.markers() {
+            arr.push(&m.name.to_string_lossy().as_ref().into());
+        }
+        arr.into()
+    }
+
+    /// Name of the currently active marker, or `undefined` if none.
+    pub fn current_marker(&self) -> Option<String> {
+        self.player
+            .active_marker()
+            .map(|c| c.to_string_lossy().into_owned())
+    }
+
+    pub fn set_marker(&mut self, name: &str) {
+        let Ok(c) = CString::new(name) else {
+            return;
+        };
+        self.player.set_marker(Some(&c));
+    }
+
+    pub fn clear_marker(&mut self) {
+        self.player.set_marker(None);
+    }
+
+    // ── Events ────────────────────────────────────────────────────────────────
+
+    /// Poll the next player event.  Returns `null` if the queue is empty,
+    /// otherwise a plain JS object with a `type` string field and optional
+    /// payload fields (`frameNo`, `loopCount`).
+    pub fn poll_event(&mut self) -> JsValue {
+        let Some(evt) = self.player.poll_event() else {
+            return JsValue::null();
+        };
+        match evt {
+            crate::PlayerEvent::Load => js_obj_with_type("Load").into(),
+            crate::PlayerEvent::LoadError => js_obj_with_type("LoadError").into(),
+            crate::PlayerEvent::Play => js_obj_with_type("Play").into(),
+            crate::PlayerEvent::Pause => js_obj_with_type("Pause").into(),
+            crate::PlayerEvent::Stop => js_obj_with_type("Stop").into(),
+            crate::PlayerEvent::Complete => js_obj_with_type("Complete").into(),
+            crate::PlayerEvent::Frame { frame_no } => {
+                let obj = js_obj_with_type("Frame");
+                set_f64(&obj, "frameNo", frame_no as f64);
+                obj.into()
+            }
+            crate::PlayerEvent::Render { frame_no } => {
+                let obj = js_obj_with_type("Render");
+                set_f64(&obj, "frameNo", frame_no as f64);
+                obj.into()
+            }
+            crate::PlayerEvent::Loop { loop_count } => {
+                let obj = js_obj_with_type("Loop");
+                set_f64(&obj, "loopCount", loop_count as f64);
+                obj.into()
+            }
+        }
+    }
+
+    pub fn emit_on_loop(&mut self) {
+        self.player.emit_on_loop();
+    }
+
+    /// Set the global audio volume multiplier (clamped to [0.0, 1.0]).
+    #[cfg_attr(not(feature = "audio"), allow(unused_variables))]
+    pub fn set_audio_volume(&mut self, volume: f32) {
+        #[cfg(feature = "audio")]
+        self.player.set_audio_volume(volume);
+    }
+
+    /// Returns the current global audio volume multiplier.
+    pub fn audio_volume(&self) -> f32 {
+        #[cfg(feature = "audio")]
+        return self.player.audio_volume();
+        #[cfg(not(feature = "audio"))]
+        1.0
+    }
+
+    // ── Assets ────────────────────────────────────────────────────────────────
+
+    /// Set a resolver for assets outside the dotLottie container (remote URLs,
+    /// external paths). Called synchronously with the asset `src` when ThorVG
+    /// first needs it; return a `Uint8Array` with the bytes, or `null`/`undefined`
+    /// to skip. Takes effect on the next load. Pass `null` to clear the resolver.
+    pub fn set_asset_resolver(&mut self, resolver: Option<js_sys::Function>) {
+        let Some(resolver) = resolver else {
+            self.player.clear_asset_resolver();
+            return;
+        };
+        self.player.set_asset_resolver(move |src: &str| {
+            let result = resolver
+                .call1(&JsValue::NULL, &JsValue::from_str(src))
+                .ok()?;
+            if result.is_null() || result.is_undefined() {
+                return None;
+            }
+            Some(js_sys::Uint8Array::new(&result).to_vec())
+        });
+    }
+
+    // ── Font ──────────────────────────────────────────────────────────────────
+
+    #[cfg(feature = "tvg")]
+    pub fn load_font(&mut self, name: &str, data: &[u8]) -> bool {
+        Player::load_font(name, data).is_ok()
+    }
+
+    #[cfg(feature = "tvg")]
+    pub fn unload_font(name: &str) -> bool {
+        Player::unload_font(name).is_ok()
+    }
+
+    // ── Theming ───────────────────────────────────────────────────────────────
+
+    #[cfg_attr(not(feature = "theming"), allow(unused_variables))]
+    pub fn set_theme(&mut self, id: &str) -> bool {
+        #[cfg(not(feature = "theming"))]
+        {
+            return false;
+        }
+        #[cfg(feature = "theming")]
+        {
+            let Ok(c) = CString::new(id) else {
+                return false;
+            };
+            self.player.set_theme(&c).is_ok()
+        }
+    }
+
+    pub fn reset_theme(&mut self) -> bool {
+        #[cfg(not(feature = "theming"))]
+        {
+            return false;
+        }
+        #[cfg(feature = "theming")]
+        {
+            self.player.reset_theme().is_ok()
+        }
+    }
+
+    #[cfg_attr(not(feature = "theming"), allow(unused_variables))]
+    pub fn set_theme_data(&mut self, data: &str) -> bool {
+        #[cfg(not(feature = "theming"))]
+        {
+            return false;
+        }
+        #[cfg(feature = "theming")]
+        {
+            let Ok(c) = CString::new(data) else {
+                return false;
+            };
+            self.player.set_theme_data(&c).is_ok()
+        }
+    }
+
+    pub fn theme_id(&self) -> Option<String> {
+        #[cfg(not(feature = "theming"))]
+        {
+            return None;
+        }
+        #[cfg(feature = "theming")]
+        {
+            self.player
+                .theme_id()
+                .map(|c| c.to_string_lossy().into_owned())
+        }
+    }
+
+    // ── DotLottie manifest / animation info ───────────────────────────────────
+
+    pub fn animation_id(&self) -> Option<String> {
+        #[cfg(not(feature = "dotlottie"))]
+        {
+            return None;
+        }
+        #[cfg(feature = "dotlottie")]
+        {
+            self.player
+                .animation_id()
+                .map(|c| c.to_string_lossy().into_owned())
+        }
+    }
+
+    /// Returns the animation manifest as a JSON string, or empty string if unavailable.
+    pub fn manifest_string(&self) -> String {
+        #[cfg(not(feature = "dotlottie"))]
+        {
+            return String::new();
+        }
+        #[cfg(feature = "dotlottie")]
+        {
+            match self.player.manifest() {
+                Some(m) => m.to_json(),
+                None => String::new(),
+            }
+        }
+    }
+
+    // ── State machines ────────────────────────────────────────────────────────
+
+    /// Returns the raw JSON definition of a state machine by ID, or `undefined`.
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn get_state_machine(&self, id: &str) -> Option<String> {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return None;
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            let Ok(c) = CString::new(id) else {
+                return None;
+            };
+            self.player.get_state_machine(&c)
+        }
+    }
+
+    /// Returns the ID of the currently active state machine, or `undefined`.
+    pub fn state_machine_id(&self) -> Option<String> {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return None;
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            self.player
+                .state_machine_id()
+                .map(|c| c.to_string_lossy().into_owned())
+        }
+    }
+
+    /// Load a state machine from a JSON definition string.  Returns `true` on
+    /// success.  The engine is kept alive inside the player and interacted
+    /// with via the `sm_*` methods.
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn state_machine_load(&mut self, definition: &str) -> bool {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return false;
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            // Drop any existing engine first to release its mutable pointer.
+            self.state_machine = None;
+            match self.player.state_machine_load_data(definition) {
+                Ok(engine) => {
+                    // SAFETY: `DotLottiePlayerWasm` owns both `player` (field 2) and
+                    // `state_machine` (field 1).  The engine holds a raw `&mut player`
+                    // reference.  Because `state_machine` is declared before `player`,
+                    // it is dropped first, so the pointer is never dangling.  We must
+                    // not create additional `&mut player` references while the engine
+                    // lives; all player mutations must go through the `sm_*` delegate
+                    // methods (which call into the engine) or be done only after
+                    // calling `state_machine_unload`.
+                    let engine_static = unsafe {
+                        std::mem::transmute::<
+                            crate::StateMachineEngine<'_>,
+                            crate::StateMachineEngine<'static>,
+                        >(engine)
+                    };
+                    self.state_machine = Some(engine_static);
+                    true
+                }
+                Err(_) => false,
+            }
+        }
+    }
+
+    /// Load a state machine from a .lottie archive by state-machine ID.
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn state_machine_load_from_id(&mut self, id: &str) -> bool {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return false;
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            self.state_machine = None;
+            let Ok(c) = CString::new(id) else {
+                return false;
+            };
+            match self.player.state_machine_load(&c) {
+                Ok(engine) => {
+                    let engine_static = unsafe {
+                        std::mem::transmute::<
+                            crate::StateMachineEngine<'_>,
+                            crate::StateMachineEngine<'static>,
+                        >(engine)
+                    };
+                    self.state_machine = Some(engine_static);
+                    true
+                }
+                Err(_) => false,
+            }
+        }
+    }
+
+    /// Unload the active state machine.
+    pub fn state_machine_unload(&mut self) {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return;
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            self.state_machine = None;
+        }
+    }
+
+    /// Fire a named event into the state machine.
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn sm_fire(&mut self, event: &str) -> bool {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return false;
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            let Some(ref mut sm) = self.state_machine else {
+                return false;
+            };
+            sm.fire(event, true).is_ok()
+        }
+    }
+
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn sm_set_numeric_input(&mut self, key: &str, value: f32) -> bool {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return false;
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            let Some(ref mut sm) = self.state_machine else {
+                return false;
+            };
+            sm.set_numeric_input(key, value, true, false);
+            true
+        }
+    }
+
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn sm_set_seed(&mut self, seed: u64) -> bool {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return false;
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            let Some(ref mut sm) = self.state_machine else {
+                return false;
+            };
+            sm.set_seed(seed);
+            true
+        }
+    }
+
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn sm_get_numeric_input(&self, key: &str) -> Option<f32> {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return None;
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            self.state_machine.as_ref()?.get_numeric_input(key)
+        }
+    }
+
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn sm_set_string_input(&mut self, key: &str, value: &str) -> bool {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return false;
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            let Some(ref mut sm) = self.state_machine else {
+                return false;
+            };
+            sm.set_string_input(key, value, true, false);
+            true
+        }
+    }
+
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn sm_get_string_input(&self, key: &str) -> Option<String> {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return None;
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            self.state_machine.as_ref()?.get_string_input(key)
+        }
+    }
+
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn sm_set_boolean_input(&mut self, key: &str, value: bool) -> bool {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return false;
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            let Some(ref mut sm) = self.state_machine else {
+                return false;
+            };
+            sm.set_boolean_input(key, value, true, false);
+            true
+        }
+    }
+
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn sm_get_boolean_input(&self, key: &str) -> Option<bool> {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return None;
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            self.state_machine.as_ref()?.get_boolean_input(key)
+        }
+    }
+
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn sm_reset_input(&mut self, key: &str) {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return;
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            if let Some(ref mut sm) = self.state_machine {
+                sm.reset_input(key, true, false);
+            }
+        }
+    }
+
+    /// Poll the next state machine event.  Returns `null` if the queue is empty,
+    /// otherwise a JS object with a `type` field and optional payload.
+    pub fn sm_poll_event(&mut self) -> JsValue {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return JsValue::null();
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            let Some(ref mut sm) = self.state_machine else {
+                return JsValue::null();
+            };
+            let Some(evt) = sm.poll_event() else {
+                return JsValue::null();
+            };
+
+            use crate::StateMachineEvent;
+
+            match &evt {
+                StateMachineEvent::Start => js_obj_with_type("Start").into(),
+                StateMachineEvent::Stop => js_obj_with_type("Stop").into(),
+                StateMachineEvent::Transition {
+                    previous_state,
+                    new_state,
+                } => {
+                    let obj = js_obj_with_type("Transition");
+                    set_str(&obj, "previousState", previous_state);
+                    set_str(&obj, "newState", new_state);
+                    obj.into()
+                }
+                StateMachineEvent::StateEntered { state } => {
+                    let obj = js_obj_with_type("StateEntered");
+                    set_str(&obj, "state", state);
+                    obj.into()
+                }
+                StateMachineEvent::StateExit { state } => {
+                    let obj = js_obj_with_type("StateExit");
+                    set_str(&obj, "state", state);
+                    obj.into()
+                }
+                StateMachineEvent::CustomEvent { message } => {
+                    let obj = js_obj_with_type("CustomEvent");
+                    set_str(&obj, "message", message);
+                    obj.into()
+                }
+                StateMachineEvent::Error { message } => {
+                    let obj = js_obj_with_type("Error");
+                    set_str(&obj, "message", message);
+                    obj.into()
+                }
+                StateMachineEvent::StringInputChange {
+                    name,
+                    old_value,
+                    new_value,
+                } => {
+                    let obj = js_obj_with_type("StringInputChange");
+                    set_str(&obj, "name", name);
+                    set_str(&obj, "oldValue", old_value);
+                    set_str(&obj, "newValue", new_value);
+                    obj.into()
+                }
+                StateMachineEvent::NumericInputChange {
+                    name,
+                    old_value,
+                    new_value,
+                } => {
+                    let obj = js_obj_with_type("NumericInputChange");
+                    set_str(&obj, "name", name);
+                    set_f64(&obj, "oldValue", *old_value as f64);
+                    set_f64(&obj, "newValue", *new_value as f64);
+                    obj.into()
+                }
+                StateMachineEvent::BooleanInputChange {
+                    name,
+                    old_value,
+                    new_value,
+                } => {
+                    let obj = js_obj_with_type("BooleanInputChange");
+                    set_str(&obj, "name", name);
+                    set_bool(&obj, "oldValue", *old_value);
+                    set_bool(&obj, "newValue", *new_value);
+                    obj.into()
+                }
+                StateMachineEvent::InputFired { name } => {
+                    let obj = js_obj_with_type("InputFired");
+                    set_str(&obj, "name", name);
+                    obj.into()
+                }
+            }
+        } // end #[cfg(feature = "state-machines")]
+    }
+
+    // ── SM lifecycle ──────────────────────────────────────────────────────
+
+    /// Start the state machine with an open-URL policy.
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn sm_start(&mut self, require_user_interaction: bool, whitelist: Vec<JsValue>) -> bool {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return false;
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            let Some(ref mut sm) = self.state_machine else {
+                return false;
+            };
+            use crate::state_machine::actions::OpenUrlPolicy;
+            let policy = OpenUrlPolicy::new(
+                whitelist.iter().filter_map(|v| v.as_string()).collect(),
+                require_user_interaction,
+            );
+            sm.start(&policy).is_ok()
+        }
+    }
+
+    /// Stop the state machine.
+    pub fn sm_stop(&mut self) -> bool {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return false;
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            let Some(ref mut sm) = self.state_machine else {
+                return false;
+            };
+            sm.stop();
+            true
+        }
+    }
+
+    /// Get the current status of the state machine as a string.
+    pub fn sm_status(&self) -> String {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return String::new();
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            self.state_machine
+                .as_ref()
+                .map(|sm| sm.status().to_string())
+                .unwrap_or_default()
+        }
+    }
+
+    /// Get the name of the current state.
+    pub fn sm_current_state(&self) -> String {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return String::new();
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            self.state_machine
+                .as_ref()
+                .map(|sm| sm.get_current_state_name())
+                .unwrap_or_default()
+        }
+    }
+
+    /// Override the current state.
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn sm_override_current_state(&mut self, state: &str, immediate: bool) -> bool {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return false;
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            let Some(ref mut sm) = self.state_machine else {
+                return false;
+            };
+            sm.override_current_state(state, immediate).is_ok()
+        }
+    }
+
+    // ── SM introspection ──────────────────────────────────────────────────
+
+    /// Returns the framework setup listeners as a JS array of strings.
+    pub fn sm_framework_setup(&self) -> JsValue {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return Array::new().into();
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            let Some(ref sm) = self.state_machine else {
+                return Array::new().into();
+            };
+            let listeners = sm.framework_setup();
+            let arr = Array::new();
+            for l in &listeners {
+                arr.push(&l.as_str().into());
+            }
+            arr.into()
+        }
+    }
+
+    /// Returns all state machine inputs as a JS array of strings.
+    pub fn sm_get_inputs(&self) -> JsValue {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return Array::new().into();
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            let Some(ref sm) = self.state_machine else {
+                return Array::new().into();
+            };
+            let inputs = sm.get_inputs();
+            let arr = Array::new();
+            for i in &inputs {
+                arr.push(&i.as_str().into());
+            }
+            arr.into()
+        }
+    }
+
+    // ── SM pointer events ─────────────────────────────────────────────────
+
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn sm_post_click(&mut self, x: f32, y: f32) {
+        #[cfg(feature = "state-machines")]
+        if let Some(ref mut sm) = self.state_machine {
+            sm.post_event(&crate::Event::Click { x, y });
+        }
+    }
+
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn sm_post_pointer_down(&mut self, x: f32, y: f32) {
+        #[cfg(feature = "state-machines")]
+        if let Some(ref mut sm) = self.state_machine {
+            sm.post_event(&crate::Event::PointerDown { x, y });
+        }
+    }
+
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn sm_post_pointer_up(&mut self, x: f32, y: f32) {
+        #[cfg(feature = "state-machines")]
+        if let Some(ref mut sm) = self.state_machine {
+            sm.post_event(&crate::Event::PointerUp { x, y });
+        }
+    }
+
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn sm_post_pointer_move(&mut self, x: f32, y: f32) {
+        #[cfg(feature = "state-machines")]
+        if let Some(ref mut sm) = self.state_machine {
+            sm.post_event(&crate::Event::PointerMove { x, y });
+        }
+    }
+
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn sm_post_pointer_enter(&mut self, x: f32, y: f32) {
+        #[cfg(feature = "state-machines")]
+        if let Some(ref mut sm) = self.state_machine {
+            sm.post_event(&crate::Event::PointerEnter { x, y });
+        }
+    }
+
+    #[cfg_attr(not(feature = "state-machines"), allow(unused_variables))]
+    pub fn sm_post_pointer_exit(&mut self, x: f32, y: f32) {
+        #[cfg(feature = "state-machines")]
+        if let Some(ref mut sm) = self.state_machine {
+            sm.post_event(&crate::Event::PointerExit { x, y });
+        }
+    }
+
+    // ── SM internal events ────────────────────────────────────────────────
+
+    /// Poll the next state machine internal event.  Returns `null` if the
+    /// queue is empty, otherwise a JS object `{ type: "Message", message }`.
+    pub fn sm_poll_internal_event(&mut self) -> JsValue {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            return JsValue::null();
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            let Some(ref mut sm) = self.state_machine else {
+                return JsValue::null();
+            };
+            let Some(evt) = sm.poll_internal_event() else {
+                return JsValue::null();
+            };
+            match &evt {
+                crate::StateMachineInternalEvent::Message { message } => {
+                    let obj = js_obj_with_type("Message");
+                    set_str(&obj, "message", message);
+                    obj.into()
+                }
+            }
+        }
+    }
+
+    /// Advance the state machine by `dt` milliseconds and render if the frame changed.
+    /// Returns `true` when a new frame was rendered, `false` otherwise.
+    pub fn sm_tick(&mut self, dt: f32) -> bool {
+        #[cfg(not(feature = "state-machines"))]
+        {
+            let _ = dt;
+            return false;
+        }
+        #[cfg(feature = "state-machines")]
+        {
+            #[cfg(feature = "webgl")]
+            self.activate_gl();
+            let Some(ref mut sm) = self.state_machine else {
+                return false;
+            };
+            sm.tick(dt).unwrap_or(false)
+        }
+    }
+}
+
+impl Drop for DotLottiePlayerWasm {
+    fn drop(&mut self) {
+        // Drop the state machine first — it holds a raw pointer into `player`.
+        #[cfg(feature = "state-machines")]
+        {
+            self.state_machine = None;
+        }
+
+        // Drop ThorVG BEFORE releasing the GPU context.  ThorVG's renderer
+        // cleanup calls GL/GPU functions (glDeleteTextures, etc.) and requires
+        // a live context.  Because `player` is ManuallyDrop it won't be dropped
+        // again by Rust after this explicit call.
+        unsafe {
+            std::mem::ManuallyDrop::drop(&mut self.player);
+        }
+
+        #[cfg(feature = "webgl")]
+        if self.gl_context_ptr != 0 {
+            unsafe {
+                super::webgl_stubs::drop_stored_context(
+                    self.gl_context_ptr as *mut web_sys::WebGl2RenderingContext,
+                );
+            }
+            self.gl_context_ptr = 0;
+        }
+
+        #[cfg(feature = "webgpu")]
+        {
+            if self.wg_device_ptr != 0 {
+                unsafe {
+                    drop(Box::from_raw(self.wg_device_ptr as *mut web_sys::GpuDevice));
+                }
+                self.wg_device_ptr = 0;
+            }
+            if self.wg_surface_ptr != 0 {
+                unsafe {
+                    drop(Box::from_raw(
+                        self.wg_surface_ptr as *mut web_sys::GpuCanvasContext,
+                    ));
+                }
+                self.wg_surface_ptr = 0;
+            }
+        }
+    }
+}
+
+impl Default for DotLottiePlayerWasm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ─── Free functions ──────────────────────────────────────────────────────────
+
+/// Register a font globally (static, not tied to a player instance).
+#[wasm_bindgen]
+#[cfg(feature = "tvg")]
+pub fn register_font(name: &str, data: &[u8]) -> bool {
+    Player::load_font(name, data).is_ok()
+}

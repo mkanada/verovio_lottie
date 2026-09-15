@@ -1,0 +1,353 @@
+#![allow(clippy::missing_safety_doc)]
+
+use bitflags::bitflags;
+use std::ffi::c_char;
+
+#[cfg(feature = "state-machines")]
+use crate::state_machine::events::Event;
+#[cfg(feature = "state-machines")]
+use core::str::FromStr;
+
+use crate::player::Error as PlayerError;
+use crate::renderer::Error as LottieRendererError;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
+pub enum DotLottieResult {
+    Success = 0,
+    Error = 1,
+    InvalidParameter = 2,
+    ManifestNotAvailable = 3,
+    AnimationNotLoaded = 4,
+    InsufficientCondition = 5,
+    FeatureNotEnabled = 6,
+}
+
+impl From<PlayerError> for DotLottieResult {
+    fn from(err: PlayerError) -> Self {
+        match err {
+            PlayerError::Unknown => DotLottieResult::Error,
+            PlayerError::InvalidParameter => DotLottieResult::InvalidParameter,
+            PlayerError::AnimationNotLoaded => DotLottieResult::AnimationNotLoaded,
+            PlayerError::InsufficientCondition => DotLottieResult::InsufficientCondition,
+        }
+    }
+}
+
+impl From<LottieRendererError> for DotLottieResult {
+    fn from(err: LottieRendererError) -> Self {
+        match err {
+            LottieRendererError::InvalidArgument => DotLottieResult::InvalidParameter,
+            LottieRendererError::AnimationNotLoaded => DotLottieResult::AnimationNotLoaded,
+            _ => DotLottieResult::Error,
+        }
+    }
+}
+
+impl<E: Into<DotLottieResult>> From<Result<(), E>> for DotLottieResult {
+    fn from(result: Result<(), E>) -> Self {
+        match result {
+            Ok(()) => DotLottieResult::Success,
+            Err(e) => e.into(),
+        }
+    }
+}
+
+// This type allows us to work with Interaction Types as bit flags and easily communicate this
+// information to the C side
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[repr(C)]
+    pub(crate) struct InteractionType: u16 {
+        const UNSET = 0;
+
+        const POINTER_UP       = 1 << 0;
+        const POINTER_DOWN     = 1 << 1;
+        const POINTER_ENTER    = 1 << 2;
+        const POINTER_EXIT     = 1 << 3;
+        const POINTER_MOVE     = 1 << 4;
+        const CLICK            = 1 << 5;
+        const ON_COMPLETE      = 1 << 6;
+        const ON_LOOP_COMPLETE = 1 << 7;
+    }
+}
+
+#[derive(Debug, Clone)]
+#[cfg(feature = "state-machines")]
+pub(crate) struct InteractionTypeParseError;
+
+#[cfg(feature = "state-machines")]
+impl InteractionType {
+    pub fn new(
+        interaction_types: &Vec<String>,
+    ) -> Result<InteractionType, InteractionTypeParseError> {
+        let mut result: InteractionType = InteractionType::UNSET;
+        for interaction_type in interaction_types {
+            result |= InteractionType::from_str(interaction_type)?;
+        }
+        Ok(result)
+    }
+}
+
+#[cfg(feature = "state-machines")]
+impl FromStr for InteractionType {
+    type Err = InteractionTypeParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "PointerUp" => Ok(InteractionType::POINTER_UP),
+            "PointerDown" => Ok(InteractionType::POINTER_DOWN),
+            "PointerEnter" => Ok(InteractionType::POINTER_ENTER),
+            "PointerExit" => Ok(InteractionType::POINTER_EXIT),
+            "PointerMove" => Ok(InteractionType::POINTER_MOVE),
+            "Click" => Ok(InteractionType::CLICK),
+            "OnComplete" => Ok(InteractionType::ON_COMPLETE),
+            "OnLoopComplete" => Ok(InteractionType::ON_LOOP_COMPLETE),
+            _ => Err(InteractionTypeParseError),
+        }
+    }
+}
+
+/// Loads bytes for an asset `src` the player cannot resolve itself.
+/// Return `true` with `*out_data`/`*out_size` set to supply the asset,
+/// `false` to skip it. The buffer is copied before the finalizer runs.
+pub type DotLottieAssetResolver = Option<
+    unsafe extern "C" fn(
+        src: *const c_char,
+        out_data: *mut *const u8,
+        out_size: *mut usize,
+        user_data: *mut std::ffi::c_void,
+    ) -> bool,
+>;
+
+/// Called after the resolver's buffer has been copied, so the caller can free it.
+pub type DotLottieAssetResolverFinalizer =
+    Option<unsafe extern "C" fn(data: *const u8, size: usize, user_data: *mut std::ffi::c_void)>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
+pub enum DotLottieWgpuTargetType {
+    Surface = 0,
+    Texture = 1,
+}
+
+impl DotLottieWgpuTargetType {
+    pub fn to_wgpu_target_type(&self) -> crate::renderer::WgpuTargetType {
+        match self {
+            DotLottieWgpuTargetType::Surface => crate::renderer::WgpuTargetType::Surface,
+            DotLottieWgpuTargetType::Texture => crate::renderer::WgpuTargetType::Texture,
+        }
+    }
+}
+
+// Input events for state machine (pointer interactions)
+#[allow(dead_code)]
+#[repr(C)]
+pub enum PlayerEvent {
+    PointerDown { x: f32, y: f32 },
+    PointerUp { x: f32, y: f32 },
+    PointerMove { x: f32, y: f32 },
+    PointerEnter { x: f32, y: f32 },
+    PointerExit { x: f32, y: f32 },
+    Click { x: f32, y: f32 },
+    OnComplete,
+    OnLoopComplete,
+}
+
+#[cfg(feature = "state-machines")]
+impl PlayerEvent {
+    pub unsafe fn to_event(&self) -> Event {
+        match self {
+            PlayerEvent::PointerDown { x, y } => Event::PointerDown { x: *x, y: *y },
+            PlayerEvent::PointerUp { x, y } => Event::PointerUp { x: *x, y: *y },
+            PlayerEvent::PointerMove { x, y } => Event::PointerMove { x: *x, y: *y },
+            PlayerEvent::PointerEnter { x, y } => Event::PointerEnter { x: *x, y: *y },
+            PlayerEvent::PointerExit { x, y } => Event::PointerExit { x: *x, y: *y },
+            PlayerEvent::Click { x, y } => Event::Click { x: *x, y: *y },
+            PlayerEvent::OnComplete => Event::OnComplete,
+            PlayerEvent::OnLoopComplete => Event::OnLoopComplete,
+        }
+    }
+}
+
+// ============================================================================
+// Event System
+// ============================================================================
+
+// DotLottie Player Events (output events from polling)
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DotLottiePlayerEventType {
+    Load = 0,
+    LoadError = 1,
+    Play = 2,
+    Pause = 3,
+    Stop = 4,
+    Frame = 5,
+    Render = 6,
+    Loop = 7,
+    Complete = 8,
+}
+
+#[repr(C)]
+pub union DotLottiePlayerEventData {
+    pub frame_no: f32,   // For Frame and Render events
+    pub loop_count: u32, // For Loop event
+}
+
+#[repr(C)]
+pub struct DotLottiePlayerEvent {
+    pub event_type: DotLottiePlayerEventType,
+    pub data: DotLottiePlayerEventData,
+}
+impl From<crate::PlayerEvent> for DotLottiePlayerEvent {
+    fn from(event: crate::PlayerEvent) -> Self {
+        match event {
+            crate::PlayerEvent::Load => DotLottiePlayerEvent {
+                event_type: DotLottiePlayerEventType::Load,
+                data: DotLottiePlayerEventData { frame_no: 0.0 },
+            },
+            crate::PlayerEvent::LoadError => DotLottiePlayerEvent {
+                event_type: DotLottiePlayerEventType::LoadError,
+                data: DotLottiePlayerEventData { frame_no: 0.0 },
+            },
+            crate::PlayerEvent::Play => DotLottiePlayerEvent {
+                event_type: DotLottiePlayerEventType::Play,
+                data: DotLottiePlayerEventData { frame_no: 0.0 },
+            },
+            crate::PlayerEvent::Pause => DotLottiePlayerEvent {
+                event_type: DotLottiePlayerEventType::Pause,
+                data: DotLottiePlayerEventData { frame_no: 0.0 },
+            },
+            crate::PlayerEvent::Stop => DotLottiePlayerEvent {
+                event_type: DotLottiePlayerEventType::Stop,
+                data: DotLottiePlayerEventData { frame_no: 0.0 },
+            },
+            crate::PlayerEvent::Frame { frame_no } => DotLottiePlayerEvent {
+                event_type: DotLottiePlayerEventType::Frame,
+                data: DotLottiePlayerEventData { frame_no },
+            },
+            crate::PlayerEvent::Render { frame_no } => DotLottiePlayerEvent {
+                event_type: DotLottiePlayerEventType::Render,
+                data: DotLottiePlayerEventData { frame_no },
+            },
+            crate::PlayerEvent::Loop { loop_count } => DotLottiePlayerEvent {
+                event_type: DotLottiePlayerEventType::Loop,
+                data: DotLottiePlayerEventData { loop_count },
+            },
+            crate::PlayerEvent::Complete => DotLottiePlayerEvent {
+                event_type: DotLottiePlayerEventType::Complete,
+                data: DotLottiePlayerEventData { frame_no: 0.0 },
+            },
+        }
+    }
+}
+
+// State Machine Events
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum StateMachineEventType {
+    StateMachineStart = 0,
+    StateMachineStop = 1,
+    StateMachineTransition = 2,
+    StateMachineStateEntered = 3,
+    StateMachineStateExit = 4,
+    StateMachineCustomEvent = 5,
+    StateMachineError = 6,
+    StateMachineStringInputChange = 7,
+    StateMachineNumericInputChange = 8,
+    StateMachineBooleanInputChange = 9,
+    StateMachineInputFired = 10,
+}
+
+/// Transition event data with pointers to state names
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct StateMachineTransitionData {
+    pub previous_state: *const c_char,
+    pub new_state: *const c_char,
+}
+
+/// State event data (for StateEntered/StateExit)
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct StateMachineStateData {
+    pub state: *const c_char,
+}
+
+/// Message event data (for CustomEvent/Error)
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct StateMachineMessageData {
+    pub message: *const c_char,
+}
+
+/// String input change event data
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct StateMachineStringInputData {
+    pub name: *const c_char,
+    pub old_value: *const c_char,
+    pub new_value: *const c_char,
+}
+
+/// Numeric input change event data
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct StateMachineNumericInputData {
+    pub name: *const c_char,
+    pub old_value: f32,
+    pub new_value: f32,
+}
+
+/// Boolean input change event data
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct StateMachineBooleanInputData {
+    pub name: *const c_char,
+    pub old_value: bool,
+    pub new_value: bool,
+}
+
+/// Input fired event data
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct StateMachineInputFiredData {
+    pub name: *const c_char,
+}
+
+/// Union of all possible state machine event data types
+#[repr(C)]
+pub union StateMachineEventData {
+    pub transition: StateMachineTransitionData,
+    pub state: StateMachineStateData,
+    pub message: StateMachineMessageData,
+    pub string_input: StateMachineStringInputData,
+    pub numeric_input: StateMachineNumericInputData,
+    pub boolean_input: StateMachineBooleanInputData,
+    pub input_fired: StateMachineInputFiredData,
+}
+
+/// State machine event with type tag and data union.
+/// String pointers are valid until the next poll call.
+#[repr(C)]
+pub struct StateMachineEvent {
+    pub event_type: StateMachineEventType,
+    pub data: StateMachineEventData,
+}
+
+/// Internal state machine event (for framework use).
+/// The message pointer is valid until the next poll call.
+#[repr(C)]
+pub struct StateMachineInternalEvent {
+    pub message: *const c_char,
+}
+
+/// Opaque C-facing wrapper for StateMachineEngine.
+/// Always present; inner is only populated with state-machines feature.
+/// Load functions return null_mut() when state-machines is off, so C callers
+/// will never hold a valid (non-null) pointer when the feature is disabled.
+pub struct DotLottieStateMachine {
+    #[cfg(feature = "state-machines")]
+    pub(crate) inner: crate::StateMachineEngine<'static>,
+}

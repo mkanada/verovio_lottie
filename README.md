@@ -26,9 +26,18 @@ Descrição completa do projeto (motivação, decisões arquiteturais, escopo):
   está implementado (`src/lottie*.cpp`, `include/vrv/lottie*.h`), seguindo
   as convenções do restante do Verovio.
 - **`compare/`** — ferramenta de linha de comando em Rust para comparação
-  visual SVG vs. dotLottie (`resvg` para SVG→PNG, `dotlottie-rs` para
+  visual SVG vs. dotLottie (`resvg` para SVG→PNG, `dotlottie-rs` local para
   Lottie/dotLottie→PNG, diff pixel a pixel). Ver
   [`compare/README.md`](compare/README.md).
+- **`thorvg/`** — cópia vendorizada do ThorVG (motor de renderização dos
+  `.lottie`) com correções próprias que os players oficiais de dotLottie
+  ainda não têm (ex.: texto comum em itálico). Ver
+  [`thorvg/VEROVIO_LOTTIE.md`](thorvg/VEROVIO_LOTTIE.md).
+- **`dotlottie-rs/`** — cópia vendorizada do crate `dotlottie-rs`, usada por
+  `compare/` para compilar o `thorvg/` local. Ver
+  [`dotlottie-rs/VEROVIO_LOTTIE.md`](dotlottie-rs/VEROVIO_LOTTIE.md).
+- **`thorvg-cli/`** — renderiza o SVG e o `.lottie` pelo mesmo `thorvg/`
+  local. Ver [`thorvg-cli/README.md`](thorvg-cli/README.md).
 - **`corpus/`** — partituras de domínio público (MEI/MusicXML) usadas como
   material de teste, e os `.lottie` gerados a partir delas. Ver
   [`corpus/README.md`](corpus/README.md).
@@ -111,5 +120,5 @@ as opções acima aparecem no grupo geral de opções, junto com `outputTo`,
 
 O critério de correção é **visual**: o `.lottie` gerado deve renderizar
 igual ao SVG equivalente. A ferramenta `compare/` faz esse diff (SVG→PNG via
-`resvg`, Lottie→PNG via `dotlottie-rs`, diff pixel a pixel). Ver
-[`compare/README.md`](compare/README.md).
+`resvg`, Lottie→PNG via o `dotlottie-rs` local compilado contra o `thorvg/`
+local, diff pixel a pixel). Ver [`compare/README.md`](compare/README.md).

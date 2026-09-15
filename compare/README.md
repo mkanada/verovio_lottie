@@ -9,7 +9,9 @@ Stack: [resvg](https://github.com/linebender/resvg) para renderizar SVG em
 PNG, e [dotlottie-rs](https://github.com/LottieFiles/dotlottie-rs) (runtime
 oficial da LottieFiles, o mesmo que implementa a State Machine v2 do
 dotLottie) para renderizar Lottie/dotLottie em PNG via software rendering
-(ThorVG), sem precisar de navegador headless.
+(ThorVG), sem precisar de navegador headless. O `dotlottie-rs` e o ThorVG são
+**cópias locais** do repositório (`../dotlottie-rs`, `../thorvg`), com
+correções próprias no ThorVG — ver "ThorVG local" abaixo.
 
 ## Build
 
@@ -18,9 +20,10 @@ cd compare
 cargo build --release
 ```
 
-A primeira build compila o ThorVG (C++ vendorizado dentro de `dotlottie-rs`)
-a partir do código-fonte — leva mais tempo que uma build Rust pura. Builds
-seguintes são incrementais.
+A primeira build compila o ThorVG local (`../thorvg`, C++, que o
+`../dotlottie-rs` enxerga por um symlink em `deps/thorvg`) a partir do
+código-fonte — leva mais tempo que uma build Rust pura. Builds seguintes são
+incrementais; mexer em `../thorvg` recompila o ThorVG na próxima build.
 
 ## Uso
 
@@ -28,8 +31,22 @@ seguintes são incrementais.
 
 ```sh
 verovio -f mei -t svg partitura.mei -o partitura.svg --resource-path <verovio>/data
-compare svg-to-png partitura.svg partitura-svg.png
+compare svg-to-png partitura.svg partitura-svg.png \
+  --font verovio/data/text/LiberationSerif-Regular.ttf \
+  --font verovio/data/text/LiberationSerif-Italic.ttf \
+  --font verovio/data/text/LiberationSerif-Bold.ttf \
+  --pin-serif-family "Liberation Serif"
 ```
+
+Renderiza com `resvg` sobre fundo branco opaco. Antes de desenhar, remove
+todo `<title>` do SVG (ver a pegadinha de D01-3 abaixo).
+
+- `--font <arquivo>` (repetível): carrega uma fonte a mais no `fontdb`.
+- `--pin-serif-family <nome>`: faz o genérico CSS `serif` resolver para essa
+  família, independente das fontes instaladas no sistema. O texto comum do
+  Verovio sai como `font-family="Times, serif"`; sem esta flag o `resvg` usa a
+  substituta do sistema (aqui, Nimbus Roman) em vez da Liberation Serif que o
+  `.lottie` embute. O nome precisa ser de uma fonte carregada via `--font`.
 
 ### 2. Renderizar um frame de um Lottie/dotLottie em PNG
 
@@ -39,7 +56,16 @@ compare lottie-to-png animacao.lottie animacao.png --width 2100 --height 2970 --
 
 Aceita `.lottie` (pacote dotLottie) ou `.json` (Lottie puro). `--width`/
 `--height` devem bater com o tamanho usado na comparação (ex.: o mesmo
-`width`/`height` do SVG gerado pelo Verovio).
+`width`/`height` do SVG gerado pelo Verovio). Renderiza com o dotlottie-rs e o
+ThorVG locais e compõe o resultado sobre fundo branco opaco.
+
+- `--frame <n>`: frame a renderizar. Num pacote `-t dotlottie` com várias
+  páginas, a página N fica em repouso no frame do marker `page<N-1>` de
+  `a/score.json` (câmera de C04), não no frame N-1.
+- `--slot <id>:r,g,b` (repetível, 0-1 cada): sobrescreve um slot de cor antes
+  de renderizar (slots por `xml:id` do modo interativo, C03).
+- `--sample <x>,<y>` (repetível): imprime o RGBA desse pixel depois de
+  renderizar.
 
 ### 3. Comparar dois PNGs
 
@@ -60,10 +86,22 @@ compare/scripts/compare-page.sh <arquivo> <página> [tolerância]
 
 Funciona a partir de qualquer diretório (resolve a raiz do repositório pela
 própria localização do script). Faz os passos 1-3 acima de uma vez só —
-`verovio -t svg`, `verovio -t lottie`, `svg-to-png` (com as fontes do
-Verovio via `--font`, ver nota abaixo), lê a resolução do PNG do SVG para
+`verovio -t svg`, `verovio -t lottie`, `svg-to-png` (com as fontes e
+`--pin-serif-family`, ver nota abaixo), lê a resolução do PNG do SVG para
 passar a `lottie-to-png`, e roda `diff` — e grava tudo em `compare/out/`
-(ignorado pelo git):
+(ignorado pelo git).
+
+**Atenção:** a partir de uma partitura, o lado Lottie é o formato de
+depuração `-t lottie`, que **não embute texto comum** (títulos, indicações,
+dedilhados). O diff dessa página inclui esse texto como divergência. Para
+comparar o pacote de produção, rode primeiro sobre a partitura (gera o PNG do
+SVG) e depois passe o `.lottie` gerado com `-t dotlottie` com o mesmo nome
+base: `compare-page.sh saida/Peca.lottie <página>`. Nesse modo o script
+reaproveita `compare/out/<nome>-p<N>-svg.png` e renderiza o frame de repouso
+da página (marker `page<N-1>`). Para o corpus inteiro já no formato de
+produção, use `compare-corpus.sh`.
+
+Saídas:
 
 ```
 compare/out/<nome>-p<N>.svg
@@ -75,28 +113,51 @@ compare/out/<nome>-p<N>-diff.png
 
 Exemplo: `compare/scripts/compare-page.sh corpus/mei/Grieg_Little_bird_Op43_No4.mei 1`.
 
-**Nota sobre `svg-to-png --font`**: a opção existe e funciona (`compare
-svg-to-png --font <arquivo.ttf/otf>` chama
-`fontdb_mut().load_font_file(...)`), mas, verificado no corpus inteiro, o SVG
-gerado pelo Verovio **não** usa `@font-face`/texto com `font-family` de fonte
-musical — os glifos SMuFL (dinâmicas, articulações etc.) sempre saem como
-`<use xlink:href="#...">` referenciando `<path>` vetorial em `<defs>`, nunca
-como `<text font-family="Leipzig">`. O único `font-family` que aparece é
-`Times, serif`, para texto comum (títulos, indicações, letra), que as fontes
-do sistema já cobrem. Ou seja: carregar as fontes do Verovio não muda nada na
-renderização do corpus atual — a opção fica disponível por segurança (caso
-algum MEI produza texto solto com fonte SMuFL), mas não é necessária hoje.
+**Fontes na comparação**: o SVG do Verovio desenha os glifos SMuFL
+(dinâmicas, articulações etc.) como `<path>` em `<defs>` referenciados por
+`<use>`, nunca como texto em fonte musical. Carregar Leipzig/Bravura via
+`--font` não muda nada no corpus atual; os scripts carregam essas fontes só
+por segurança. O que importa é o texto comum (`font-family="Times, serif"`):
+os scripts carregam as três `LiberationSerif-*.ttf` que o exportador embute e
+passam `--pin-serif-family "Liberation Serif"`, para que o PNG de referência
+use a mesma fonte do `.lottie` (ver a pegadinha de D01-2 abaixo).
+
+### 5. Simular um host: `sm-render`
+
+```sh
+compare sm-render pacote.lottie saida/ --sm sm_highlight --width 2100 --height 2970 \
+  --script "0:fire d1e134;2750:fire d1e252" --snap "0,2750,3417" --prefix playback
+```
+
+Carrega a animação e uma state machine do pacote (`--sm <id>`, ou
+`--sm-file <json>` para uma state machine avulsa), executa o roteiro no tempo
+e salva `<prefixo>-t<ms>.png` em `saida/` para cada instante de `--snap`,
+sobre fundo branco. As ações agendadas para um instante rodam **antes** do
+snapshot desse mesmo instante.
+
+- `--script "ms:ação;ms:ação"`: `fire <evento>` (state machine),
+  `slot <id>:r,g,b`, `clearslot <id>` e `clearslots` (slots interativos,
+  C03).
+- `--sample <x>,<y>` (repetível): imprime o RGBA do pixel a cada snapshot.
+- `--measure-load`: só carrega a state machine e imprime o tempo de carga.
+
+### 6. Varreduras e roteiros prontos
+
+| Script | O que faz | Saída |
+| --- | --- | --- |
+| `compare/scripts/compare-corpus.sh [tolerância]` | Corpus inteiro (`corpus/mei` + `corpus/musicxml`): SVG de cada página, um pacote `-t dotlottie` por peça, e PNGs + diff por página (frame de repouso de cada página lido dos markers) | `compare/out/corpus/<peça>/`, `resultado.csv`, `tamanhos.txt` |
+| `compare/scripts/compare-layout-matrix.sh [arquivo] [tolerância]` | 16 combinações de tamanho, orientação, cabeçalho e rodapé para uma peça, página 1 | `docs/matriz-layout/` (versionado, ver o README de lá) |
+| `compare/scripts/sm-playback.sh <arquivo> [máx-eventos] [seed]` | Gera pacote e timemap com a mesma seed e dispara o destaque nos onsets reais do timemap via `sm-render` (C05) | `compare/out/c05/<peça>/` |
+
+`compare/out/` é ignorado pelo git.
 
 ## Limitações atuais / decisões conhecidas
 
-- **Ainda não há exportador dotLottie no Verovio** — o subcomando
-  `lottie-to-png` já funciona contra qualquer `.lottie`/`.json` válido (testado
-  com fixtures do próprio `dotlottie-rs`), mas o fluxo real "Verovio → .lottie
-  → PNG" só fecha quando o exportador (`verovio/src`, futuro `IoDotLottie`)
-  existir.
 - **Critério de comparação é visual/manual** — `diff` dá um número e uma
   imagem para inspeção humana; não há um limiar de "passou/falhou"
   automático definido ainda (ver `docs/descricao-do-projeto.md`).
+- **O PNG do Lottie mostra o que o ThorVG local desenha**, não o que os
+  players oficiais de dotLottie desenham (ver "ThorVG local" abaixo).
 
 ## Pegadinha do dotlottie-rs: `set_frame`/`render` podem "falhar" sem problema
 
@@ -107,9 +168,9 @@ da lib). Por causa disso:
 
 - Chamar `set_frame(n)` quando `n` já é o frame corrente é tratado como
   no-op pelo ThorVG e retorna erro (`"unknown error"`, que na real é
-  `Result::InsufficientCondition` do lado do ThorVG, mas point remonta para
-  `Error::Unknown` no dotlottie-rs por causa de um `match` que não distingue
-  esse caso).
+  `Result::InsufficientCondition` do lado do ThorVG, convertido para
+  `Error::Unknown` no dotlottie-rs por um `match` que não distingue esse
+  caso).
 - Chamar `render()` sem nada ter mudado desde o último render (`updated ==
   false` internamente) também retorna erro pelo mesmo motivo.
 
@@ -216,3 +277,29 @@ Liberation Serif de verdade, não mais Nimbus Roman). Isso por si só ainda
 não elimina toda divergência de texto comum — resta a pegadinha de
 `<title>` aninhado acima, ortogonal à fonte — mas isola o efeito de "fonte
 fisicamente diferente" da conta.
+
+## ThorVG local (D01-4): itálico sintético aplicado por cima de fonte já itálica
+
+O `compare` não usa mais o dotlottie-rs/ThorVG originais. Usa as cópias
+vendorizadas `../dotlottie-rs` (sem mudança de código; `deps/thorvg` é symlink)
+e `../thorvg` (com correções próprias, listadas em
+[`../thorvg/VEROVIO_LOTTIE.md`](../thorvg/VEROVIO_LOTTIE.md)).
+
+Motivo: o loader de Lottie do ThorVG original aplica um itálico sintético
+(cisalhamento de 0,18) sempre que o `fStyle` da fonte contém `"Italic"`, sem
+checar se a face já é itálica. Com a `LiberationSerif-Italic.ttf` embutida
+pelo exportador, todo texto comum em itálico saía **inclinado duas vezes e
+deslocado**, com as letras grudadas. O exportador estava certo; a divergência
+era do motor. Antes de D01-4 isso aparecia nos números como se fosse
+"ruído de antialiasing em itálico" — não era.
+
+A correção local só aplica o itálico sintético quando a face resolvida não é
+itálica por desenho (`head.macStyle`/`OS/2.fsSelection`). Efeito medido
+(`compare-corpus.sh 32`): corpus de 0,0196%–0,5219%/média 0,2293% para
+**0,0135%–0,4153%/média 0,1318%**, as 34 páginas melhorando; Chopin Étude p.1
+de 0,4520% para 0,0465%. Detalhes em
+[`docs/plano/D01-4-italico-sintetico-thorvg.md`](../docs/plano/D01-4-italico-sintetico-thorvg.md).
+
+**Atenção:** os players oficiais de dotLottie não têm essa correção. Um PNG
+do `compare` mostra o que um player compilado contra `../thorvg` desenha, não
+o que o dotlottie-rs original desenha.

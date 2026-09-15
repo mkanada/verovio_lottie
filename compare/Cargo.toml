@@ -10,7 +10,9 @@ usvg = "0.48"
 resvg = "0.48"
 tiny-skia = "0.12"
 image = { version = "0.25", default-features = false, features = ["png"] }
-dotlottie-rs = { git = "https://github.com/LottieFiles/dotlottie-rs", features = [
+# Cópia local do dotlottie-rs (../dotlottie-rs), compilando o ThorVG local com
+# correções próprias (../thorvg) — ver "ThorVG local" em compare/README.md.
+dotlottie-rs = { path = "../dotlottie-rs", features = [
     "tvg",
     "tvg-cpu",
     "tvg-ttf",

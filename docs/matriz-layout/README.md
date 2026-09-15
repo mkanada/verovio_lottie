@@ -1,6 +1,9 @@
 # Matriz de opções de layout — paridade SVG vs. dotLottie
 
-**Data:** 2026-09-14 · **Commit:** `d3683fa`
+**Data:** 2026-09-14 · **Commit:** `d3683fa` · **Reexecutado:** 2026-09-15,
+com o ThorVG local corrigido (ver
+[D01-4](../plano/D01-4-italico-sintetico-thorvg.md) e "Correção" em
+"Achados")
 
 ## Contexto
 
@@ -73,29 +76,30 @@ documentados em `compare/README.md`).
 
 | Combinação | Tamanho | Orientação | Cabeçalho | Rodapé | Dimensões (px) | Páginas | % divergente (p.1) | Tamanho `.lottie` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `a4-portrait-header-footer` | a4 | portrait | header | footer | 2100x2970 | 4 | 0,4520% | 1019,2 KB |
-| `a4-portrait-header-no-footer` | a4 | portrait | header | no-footer | 2100x2970 | 4 | 0,4443% | 983,3 KB |
-| `a4-portrait-no-header-footer` | a4 | portrait | no-header | footer | 2100x2970 | 4 | 0,4550% | 1018,3 KB |
-| `a4-portrait-no-header-no-footer` | a4 | portrait | no-header | no-footer | 2100x2970 | 4 | 0,4473% | 982,5 KB |
-| `a4-landscape-header-footer` | a4 | landscape | header | footer | 2970x2100 | 4 | 0,4231% | 1010,5 KB |
-| `a4-landscape-header-no-footer` | a4 | landscape | header | no-footer | 2970x2100 | 4 | 0,4153% | 974,9 KB |
-| `a4-landscape-no-header-footer` | a4 | landscape | no-header | footer | 2970x2100 | 4 | 0,4181% | 1009,6 KB |
-| `a4-landscape-no-header-no-footer` | a4 | landscape | no-header | no-footer | 2970x2100 | 4 | 0,4104% | 974,0 KB |
-| `tela-portrait-header-footer` | tela | portrait | header | footer | 1080x1920 | 11 | 0,3970% | 1117,9 KB |
-| `tela-portrait-header-no-footer` | tela | portrait | header | no-footer | 1080x1920 | 11 | 0,3737% | 1019,7 KB |
-| `tela-portrait-no-header-footer` | tela | portrait | no-header | footer | 1080x1920 | 11 | 0,3968% | 1116,0 KB |
-| `tela-portrait-no-header-no-footer` | tela | portrait | no-header | no-footer | 1080x1920 | 11 | 0,3735% | 1017,6 KB |
-| `tela-landscape-header-footer` | tela | landscape | header | footer | 1920x1080 | 16 | 0,2965% | 1131,4 KB |
-| `tela-landscape-header-no-footer` | tela | landscape | header | no-footer | 1920x1080 | 14 | 0,2733% | 989,1 KB |
-| `tela-landscape-no-header-footer` | tela | landscape | no-header | footer | 1920x1080 | 16 | 0,2925% | 1128,6 KB |
-| `tela-landscape-no-header-no-footer` | tela | landscape | no-header | no-footer | 1920x1080 | 12 | 0,2692% | 986,1 KB |
+| `a4-portrait-header-footer` | a4 | portrait | header | footer | 2100x2970 | 4 | 0,0465% | 1019,2 KB |
+| `a4-portrait-header-no-footer` | a4 | portrait | header | no-footer | 2100x2970 | 4 | 0,0388% | 983,3 KB |
+| `a4-portrait-no-header-footer` | a4 | portrait | no-header | footer | 2100x2970 | 4 | 0,0489% | 1018,3 KB |
+| `a4-portrait-no-header-no-footer` | a4 | portrait | no-header | no-footer | 2100x2970 | 4 | 0,0412% | 982,5 KB |
+| `a4-landscape-header-footer` | a4 | landscape | header | footer | 2970x2100 | 4 | 0,0458% | 1010,5 KB |
+| `a4-landscape-header-no-footer` | a4 | landscape | header | no-footer | 2970x2100 | 4 | 0,0381% | 974,9 KB |
+| `a4-landscape-no-header-footer` | a4 | landscape | no-header | footer | 2970x2100 | 4 | 0,0396% | 1009,6 KB |
+| `a4-landscape-no-header-no-footer` | a4 | landscape | no-header | no-footer | 2970x2100 | 4 | 0,0318% | 974,0 KB |
+| `tela-portrait-header-footer` | tela | portrait | header | footer | 1080x1920 | 11 | 0,0743% | 1118,0 KB |
+| `tela-portrait-header-no-footer` | tela | portrait | header | no-footer | 1080x1920 | 11 | 0,0510% | 1019,7 KB |
+| `tela-portrait-no-header-footer` | tela | portrait | no-header | footer | 1080x1920 | 11 | 0,0751% | 1116,1 KB |
+| `tela-portrait-no-header-no-footer` | tela | portrait | no-header | no-footer | 1080x1920 | 11 | 0,0518% | 1017,5 KB |
+| `tela-landscape-header-footer` | tela | landscape | header | footer | 1920x1080 | 16 | 0,0600% | 1131,4 KB |
+| `tela-landscape-header-no-footer` | tela | landscape | header | no-footer | 1920x1080 | 14 | 0,0367% | 989,1 KB |
+| `tela-landscape-no-header-footer` | tela | landscape | no-header | footer | 1920x1080 | 16 | 0,0561% | 1128,7 KB |
+| `tela-landscape-no-header-no-footer` | tela | landscape | no-header | no-footer | 1920x1080 | 12 | 0,0328% | 986,1 KB |
 
-**Min 0,2692% – max 0,4550% – média 0,3836%** — todas as 16 combinações bem
-abaixo de 1%, na mesma faixa da varredura de corpus completo em
-`relatorio-paridade.md` (que testava só a combinação `a4-portrait-header-footer`,
-linha 1 desta tabela: 0,4520% aqui contra 0,4842% lá — a pequena melhora é
-consistente com correções de paridade feitas depois daquele relatório, ex.
-D05).
+**Min 0,0318% – max 0,0751% – média 0,0480%** — todas as 16 combinações bem
+abaixo de 1%. A linha 1 (`a4-portrait-header-footer`) é a mesma página que o
+`compare-corpus.sh` mede para o Chopin Étude p.1, e dá o mesmo valor
+(0,0465%). Na primeira rodada desta matriz (2026-09-14, ThorVG original, antes
+de D01-4) os números eram min 0,2692% – max 0,4550% – média 0,3836%. Os
+tamanhos de `.lottie` variam algumas dezenas de bytes entre rodadas porque os
+`xml:id` gerados são aleatórios; a contagem de páginas não mudou.
 
 CSV bruto: [`resultado.csv`](resultado.csv). Imagens (`<peça>-p1-svg.png`,
 `<peça>-p1-lottie.png`, `<peça>-p1-diff.png`) em cada subdiretório nomeado
@@ -106,15 +110,24 @@ pela combinação (ex. `tela-landscape-no-header-no-footer/`).
 1. **Paridade visual se mantém em todas as 16 combinações** — nenhuma
    combinação de cabeçalho/rodapé/orientação/tamanho de página quebra o
    exportador dotLottie nem introduz divergência estrutural (posição/forma
-   errada, cor errada, conteúdo faltando). Inspeção visual das imagens de
-   diff confirma que a divergência remanescente é a mesma categoria de
-   ruído de antialiasing entre `resvg` e ThorVG já documentada em
-   `relatorio-paridade.md`/`compare/README.md` (bordas finas de glifos de
-   texto em itálico, alguns pontos isolados) — nada relacionado
-   especificamente a estas opções de layout.
+   errada, cor errada, conteúdo faltando). A divergência remanescente
+   (0,03%–0,08%) é ruído de antialiasing entre `resvg` e ThorVG em traços
+   finos (rodapé, chave, linhas de pauta), a mesma categoria já documentada
+   em `relatorio-paridade.md` — nada relacionado especificamente a estas
+   opções de layout.
+
+   **Correção (2026-09-15):** a primeira versão deste relatório atribuía a
+   divergência de então (0,27%–0,46%) a ruído de antialiasing "em bordas
+   finas de glifos de texto em itálico". **Estava errado.** A maior parte
+   era o ThorVG do `dotlottie-rs` aplicando itálico sintético por cima da
+   `LiberationSerif-Italic` embutida: inclinação dupla e letras grudadas,
+   visíveis nos `*-lottie.png` da rodada original. Com o ThorVG local
+   corrigido ([D01-4](../plano/D01-4-italico-sintetico-thorvg.md)), a matriz
+   foi reexecutada e caiu de 6 a 12 vezes em todas as combinações. Tabela,
+   CSV e imagens acima já são da nova rodada.
 2. **Remover cabeçalho/rodapé não introduz divergência nova** — a %
    praticamente não muda entre `header-footer` e `no-header-no-footer` sob
-   o mesmo tamanho/orientação (ex. `a4-portrait`: 0,4520% → 0,4473%): o
+   o mesmo tamanho/orientação (ex. `a4-portrait`: 0,0465% → 0,0412%): o
    exportador suprime `pgHead`/`pgFoot` de forma consistente com o SVG, sem
    deixar resquício visual.
 3. **Tamanho de página muda a contagem de páginas bem mais do que

@@ -26,15 +26,30 @@ consumir esses `.lottie` junto com o `timemap` do Verovio.
   exportador dotLottie será implementado, seguindo as convenções do
   Verovio.
 - **`compare/`** — crate Rust com a ferramenta de comparação visual SVG vs.
-  dotLottie (`resvg` para SVG→PNG, `dotlottie-rs` para Lottie/dotLottie→PNG,
-  diff pixel a pixel). Ver `compare/README.md` antes de mexer nela — tem uma
-  pegadinha documentada sobre `set_frame`/`render` do dotlottie-rs.
+  dotLottie (`resvg` para SVG→PNG, `dotlottie-rs` local para
+  Lottie/dotLottie→PNG, diff pixel a pixel). Ver `compare/README.md` antes de
+  mexer nela — tem uma pegadinha documentada sobre `set_frame`/`render` do
+  dotlottie-rs.
+- **`thorvg/`** — cópia vendorizada do ThorVG (o motor que renderiza os
+  `.lottie`) **com correções próprias**, marcadas com `verovio_lottie` no
+  código. Ver `thorvg/VEROVIO_LOTTIE.md` (origem, lista de modificações, como
+  atualizar). Hoje: não aplicar itálico sintético por cima de fonte já
+  itálica (D01-4). **Os players oficiais de dotLottie não têm essa
+  correção** — neles o texto comum em itálico sai inclinado duas vezes.
+- **`dotlottie-rs/`** — cópia vendorizada do crate `dotlottie-rs`, que só
+  existe para compilar o `thorvg/` local (o `build.rs` original compila de
+  `deps/thorvg`, aqui um symlink). Usada por `compare/`. Ver
+  `dotlottie-rs/VEROVIO_LOTTIE.md`.
+- **`thorvg-cli/`** — `thorvg-render`: renderiza o SVG e o `.lottie` pelo
+  mesmo `thorvg/` local (build meson com loader de SVG). Ver
+  `thorvg-cli/README.md`.
 - **Raiz do repositório** — tudo que é deste projeto e não do Verovio em
   si: `docs/`, `compare/`, e outros utilitários de suporte conforme o
   projeto avançar. Não misture esse tooling dentro de `verovio/`.
 - Histórico git **próprio e independente** do upstream do Verovio (sem
   submodule/subtree) — atualizações do Verovio original precisam ser
-  incorporadas manualmente se necessário.
+  incorporadas manualmente se necessário. O mesmo vale para `thorvg/` e
+  `dotlottie-rs/`.
 
 ## Decisões arquiteturais já tomadas
 
