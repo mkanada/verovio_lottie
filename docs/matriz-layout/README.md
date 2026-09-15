@@ -1,6 +1,6 @@
 # Matriz de opções de layout — paridade SVG vs. dotLottie
 
-**Data:** 2026-09-14 · **Commit:** `b528de1`
+**Data:** 2026-09-14 · **Commit:** `d3683fa`
 
 ## Contexto
 
@@ -50,6 +50,13 @@ documentados em `compare/README.md`).
   auto` (padrão), tanto `pgHead` quanto `pgFoot` aparecem em **todas** as
   páginas da peça (não só primeira/última), então comparar a página 1 já
   exercita os dois.
+- **Fundo branco:** `svg-to-png`/`lottie-to-png` (e o `sm-render` usado em
+  `docs/exemplos`) agora compõem o render sobre fundo branco opaco antes de
+  salvar o PNG — antes saíam com fundo totalmente transparente (`alpha=0`),
+  o que já tinha exigido um passo manual de "achatamento" fora da
+  ferramenta para `docs/mesa-de-prova` (commit `c3874f6`). O `diff.png` não
+  muda: já salva com alpha 255 desde sempre (fundo cinza esmaecido +
+  vermelho é o próprio design da imagem de diferença).
 
 ## Eixos da matriz
 
@@ -66,27 +73,27 @@ documentados em `compare/README.md`).
 
 | Combinação | Tamanho | Orientação | Cabeçalho | Rodapé | Dimensões (px) | Páginas | % divergente (p.1) | Tamanho `.lottie` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `a4-portrait-header-footer` | a4 | portrait | header | footer | 2100x2970 | 4 | 0,4518% | 1019,1 KB |
-| `a4-portrait-header-no-footer` | a4 | portrait | header | no-footer | 2100x2970 | 4 | 0,4440% | 983,2 KB |
+| `a4-portrait-header-footer` | a4 | portrait | header | footer | 2100x2970 | 4 | 0,4520% | 1019,2 KB |
+| `a4-portrait-header-no-footer` | a4 | portrait | header | no-footer | 2100x2970 | 4 | 0,4443% | 983,3 KB |
 | `a4-portrait-no-header-footer` | a4 | portrait | no-header | footer | 2100x2970 | 4 | 0,4550% | 1018,3 KB |
-| `a4-portrait-no-header-no-footer` | a4 | portrait | no-header | no-footer | 2100x2970 | 4 | 0,4472% | 982,5 KB |
-| `a4-landscape-header-footer` | a4 | landscape | header | footer | 2970x2100 | 4 | 0,4229% | 1010,4 KB |
-| `a4-landscape-header-no-footer` | a4 | landscape | header | no-footer | 2970x2100 | 4 | 0,4152% | 974,9 KB |
-| `a4-landscape-no-header-footer` | a4 | landscape | no-header | footer | 2970x2100 | 4 | 0,4179% | 1009,6 KB |
-| `a4-landscape-no-header-no-footer` | a4 | landscape | no-header | no-footer | 2970x2100 | 4 | 0,4101% | 974,0 KB |
-| `tela-portrait-header-footer` | tela | portrait | header | footer | 1080x1920 | 11 | 0,3967% | 1117,9 KB |
-| `tela-portrait-header-no-footer` | tela | portrait | header | no-footer | 1080x1920 | 11 | 0,3735% | 1019,6 KB |
-| `tela-portrait-no-header-footer` | tela | portrait | no-header | footer | 1080x1920 | 11 | 0,3965% | 1116,0 KB |
-| `tela-portrait-no-header-no-footer` | tela | portrait | no-header | no-footer | 1080x1920 | 11 | 0,3732% | 1017,5 KB |
-| `tela-landscape-header-footer` | tela | landscape | header | footer | 1920x1080 | 16 | 0,2964% | 1131,4 KB |
-| `tela-landscape-header-no-footer` | tela | landscape | header | no-footer | 1920x1080 | 14 | 0,2732% | 989,1 KB |
-| `tela-landscape-no-header-footer` | tela | landscape | no-header | footer | 1920x1080 | 16 | 0,2922% | 1128,6 KB |
-| `tela-landscape-no-header-no-footer` | tela | landscape | no-header | no-footer | 1920x1080 | 12 | 0,2690% | 986,1 KB |
+| `a4-portrait-no-header-no-footer` | a4 | portrait | no-header | no-footer | 2100x2970 | 4 | 0,4473% | 982,5 KB |
+| `a4-landscape-header-footer` | a4 | landscape | header | footer | 2970x2100 | 4 | 0,4231% | 1010,5 KB |
+| `a4-landscape-header-no-footer` | a4 | landscape | header | no-footer | 2970x2100 | 4 | 0,4153% | 974,9 KB |
+| `a4-landscape-no-header-footer` | a4 | landscape | no-header | footer | 2970x2100 | 4 | 0,4181% | 1009,6 KB |
+| `a4-landscape-no-header-no-footer` | a4 | landscape | no-header | no-footer | 2970x2100 | 4 | 0,4104% | 974,0 KB |
+| `tela-portrait-header-footer` | tela | portrait | header | footer | 1080x1920 | 11 | 0,3970% | 1117,9 KB |
+| `tela-portrait-header-no-footer` | tela | portrait | header | no-footer | 1080x1920 | 11 | 0,3737% | 1019,7 KB |
+| `tela-portrait-no-header-footer` | tela | portrait | no-header | footer | 1080x1920 | 11 | 0,3968% | 1116,0 KB |
+| `tela-portrait-no-header-no-footer` | tela | portrait | no-header | no-footer | 1080x1920 | 11 | 0,3735% | 1017,6 KB |
+| `tela-landscape-header-footer` | tela | landscape | header | footer | 1920x1080 | 16 | 0,2965% | 1131,4 KB |
+| `tela-landscape-header-no-footer` | tela | landscape | header | no-footer | 1920x1080 | 14 | 0,2733% | 989,1 KB |
+| `tela-landscape-no-header-footer` | tela | landscape | no-header | footer | 1920x1080 | 16 | 0,2925% | 1128,6 KB |
+| `tela-landscape-no-header-no-footer` | tela | landscape | no-header | no-footer | 1920x1080 | 12 | 0,2692% | 986,1 KB |
 
-**Min 0,2690% – max 0,4550% – média 0,3834%** — todas as 16 combinações bem
+**Min 0,2692% – max 0,4550% – média 0,3836%** — todas as 16 combinações bem
 abaixo de 1%, na mesma faixa da varredura de corpus completo em
 `relatorio-paridade.md` (que testava só a combinação `a4-portrait-header-footer`,
-linha 1 desta tabela: 0,4518% aqui contra 0,4842% lá — a pequena melhora é
+linha 1 desta tabela: 0,4520% aqui contra 0,4842% lá — a pequena melhora é
 consistente com correções de paridade feitas depois daquele relatório, ex.
 D05).
 
@@ -107,7 +114,7 @@ pela combinação (ex. `tela-landscape-no-header-no-footer/`).
    especificamente a estas opções de layout.
 2. **Remover cabeçalho/rodapé não introduz divergência nova** — a %
    praticamente não muda entre `header-footer` e `no-header-no-footer` sob
-   o mesmo tamanho/orientação (ex. `a4-portrait`: 0,4518% → 0,4472%): o
+   o mesmo tamanho/orientação (ex. `a4-portrait`: 0,4520% → 0,4473%): o
    exportador suprime `pgHead`/`pgFoot` de forma consistente com o SVG, sem
    deixar resquício visual.
 3. **Tamanho de página muda a contagem de páginas bem mais do que

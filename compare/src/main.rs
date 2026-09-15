@@ -235,6 +235,11 @@ fn svg_to_png(
     let size = tree.size().to_int_size();
     let mut pixmap = tiny_skia::Pixmap::new(size.width(), size.height())
         .context("SVG com dimensões inválidas (0x0)")?;
+    // Fundo branco opaco antes de desenhar por cima: um `Pixmap` novo começa
+    // totalmente transparente, e um PNG assim sai ilegível em visualizadores
+    // com tema escuro (achado ao gerar `docs/mesa-de-prova`/`docs/matriz-layout`).
+    // `diff()` não passa por aqui — já salva com alpha 255 desde sempre.
+    pixmap.fill(tiny_skia::Color::WHITE);
     resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
 
     pixmap
@@ -353,16 +358,7 @@ fn lottie_to_png(
         eprintln!("aviso: render() não teve efeito ({e}) — pode ser um no-op inofensivo se nada mudou desde o load");
     }
 
-    let mut img = image::RgbaImage::new(width, height);
-    for (i, px) in buffer.iter().enumerate() {
-        let x = (i as u32) % width;
-        let y = (i as u32) / width;
-        let a = ((px >> 24) & 0xFF) as u8;
-        let r = ((px >> 16) & 0xFF) as u8;
-        let g = ((px >> 8) & 0xFF) as u8;
-        let b = (px & 0xFF) as u8;
-        img.put_pixel(x, y, image::Rgba([r, g, b, a]));
-    }
+    let img = buffer_to_white_png(&buffer, width, height);
     img.save(output)
         .with_context(|| format!("salvando {}", output.display()))?;
 
@@ -474,6 +470,31 @@ fn pixel_rgba(buffer: &[u32], width: u32, x: u32, y: u32) -> Option<(u8, u8, u8,
     Some((r, g, b, a))
 }
 
+/// Compõe um buffer ARGB8888S (alpha reto, ver nota do D05 em `lottie_to_png`)
+/// sobre fundo branco opaco e devolve um PNG sempre opaco (alpha 255) — um
+/// buffer com áreas transparentes sai ilegível em visualizadores com tema
+/// escuro (achado ao gerar `docs/mesa-de-prova`/`docs/matriz-layout`, antes
+/// resolvido só manualmente fora desta ferramenta). Usado por `lottie-to-png`
+/// e `sm-render`; `diff()` não passa por aqui — já salva com alpha 255 desde
+/// sempre (fundo cinza esmaecido + vermelho é o próprio design da imagem de
+/// diferença, não precisa de composição).
+fn buffer_to_white_png(buffer: &[u32], width: u32, height: u32) -> image::RgbaImage {
+    let blend = |channel: u16, alpha: u16| -> u8 {
+        (((channel * alpha) + 255 * (255 - alpha) + 127) / 255) as u8
+    };
+    let mut img = image::RgbaImage::new(width, height);
+    for (i, px) in buffer.iter().enumerate() {
+        let x = (i as u32) % width;
+        let y = (i as u32) / width;
+        let a = ((px >> 24) & 0xFF) as u16;
+        let r = ((px >> 16) & 0xFF) as u16;
+        let g = ((px >> 8) & 0xFF) as u16;
+        let b = (px & 0xFF) as u16;
+        img.put_pixel(x, y, image::Rgba([blend(r, a), blend(g, a), blend(b, a), 255]));
+    }
+    img
+}
+
 #[allow(clippy::too_many_arguments)]
 fn save_and_sample(
     buffer: &[u32],
@@ -485,16 +506,7 @@ fn save_and_sample(
     state_name: &str,
     samples: &[(u32, u32)],
 ) -> Result<()> {
-    let mut img = image::RgbaImage::new(width, height);
-    for (i, px) in buffer.iter().enumerate() {
-        let x = (i as u32) % width;
-        let y = (i as u32) / width;
-        let a = ((px >> 24) & 0xFF) as u8;
-        let r = ((px >> 16) & 0xFF) as u8;
-        let g = ((px >> 8) & 0xFF) as u8;
-        let b = (px & 0xFF) as u8;
-        img.put_pixel(x, y, image::Rgba([r, g, b, a]));
-    }
+    let img = buffer_to_white_png(buffer, width, height);
     let out_path = out_dir.join(format!("{prefix}-t{t}.png"));
     img.save(&out_path)
         .with_context(|| format!("salvando {}", out_path.display()))?;
