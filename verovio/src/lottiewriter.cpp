@@ -434,20 +434,14 @@ namespace {
     };
 } // namespace
 
-// One of the three vendored Liberation Serif styles (B03: Regular/Italic/Bold, Bold Italic
-// not covered). Bold+Italic together falls back to Bold, warning once per (bold, italic)
-// combination seen - same "unsupported value -> warn once + fallback" pattern as
-// ResolveColor's unsupported CSS color names.
+// One of the four vendored Liberation Serif styles (B03 originally covered only
+// Regular/Italic/Bold; Bold Italic added in D01-5 after a real bold+italic tempo submark
+// - "49"/"50"/"51" fluctuation numbers in Clair de Lune, class "tempo" for the CSS bold rule
+// plus an explicit font-style="italic" on the run - was confirmed rendering upright instead
+// of slanted, see docs/plano/D01-5-bold-italico-tempo.md).
 static std::string SelectFontStyleName(bool bold, bool italic)
 {
-    if (bold && italic) {
-        static bool warned = false;
-        if (!warned) {
-            LogWarning("LottieWriter: bold italic common text is not covered (B03); falling back to Bold.");
-            warned = true;
-        }
-        return "Bold";
-    }
+    if (bold && italic) return "BoldItalic";
     if (bold) return "Bold";
     if (italic) return "Italic";
     return "Regular";
@@ -567,13 +561,14 @@ static std::string WriteTextLayer(
 
 // Fixed fonts.list entries (B03: Regular/Italic/Bold always embedded together, whether or not
 // the piece actually uses each style - keeps package size predictable, see D01's "Decisões de
-// escopo"), format confirmed against the dotlottie-rs/ThorVG version vendored by `compare`
+// escopo"; BoldItalic added in D01-5, same always-embedded treatment), format confirmed
+// against the dotlottie-rs/ThorVG version vendored by `compare`
 // (deps/thorvg/test/resources/resolver.json and src/renderer/thorvg.rs's
 // asset_resolver_memoizes_loaded_fonts_and_failures test, both using "fName"/"fFamily"/
 // "fStyle"/"fPath"/"origin":3).
 static std::string WriteFontsList()
 {
-    static const char *const kStyles[] = { "Regular", "Italic", "Bold" };
+    static const char *const kStyles[] = { "Regular", "Italic", "Bold", "BoldItalic" };
     std::vector<std::string> items;
     for (const char *style : kStyles) {
         const std::string fName = LiberationFontName(style);

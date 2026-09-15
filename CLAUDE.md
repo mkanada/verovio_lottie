@@ -127,18 +127,21 @@ Trate estas decisões como fixas — não as reabra sem confirmar com o usuário
     `fontTextLiberation`, licença SIL OFL), vendorizada como `.ttf` de
     verdade em `verovio/` (hoje só existe embutida em woff2 dentro de
     `verovio/data/Liberation.css`).
-  - Estilos cobertos: **Regular + Italic + Bold** (decisão explícita do
-    usuário, mesmo sabendo do custo de tamanho — ver abaixo). Bold Italic
-    **não** está coberto.
+  - Estilos cobertos: **Regular + Italic + Bold + Bold Italic** (os três
+    primeiros por decisão explícita do usuário em B03, mesmo sabendo do
+    custo de tamanho — ver abaixo; Bold Italic adicionado em D01-5 depois
+    que o usuário pediu para investigar/corrigir um caso real — números de
+    tempo/rubato bold+italic em Clair de Lune saindo só em negrito).
   - Mecanismo: camada de texto nativa do Lottie (`ty:5` + `fonts.list` com
     `origin:3`), confirmada funcionando no `dotlottie-rs`/ThorVG por spike
     real nesta sessão (não só leitura de código).
   - Custo de tamanho aceito conscientemente: ~208-220 KB comprimidos por
     estilo de fonte embutido (medido no spike), ~600-650 KB fixos por peça
-    com os três estilos — acima da maioria dos pacotes do corpus hoje
-    (77-430 KB, ver `docs/plano/relatorio-paridade.md`, medido **sem**
-    texto comum ainda). Atenção especial ao implementar D01 se isso virar
-    problema real em produção.
+    com os três estilos originais (agora ~800-870 KB com os quatro,
+    D01-5) — acima da maioria dos pacotes do corpus hoje (77-430 KB, ver
+    `docs/plano/relatorio-paridade.md`, medido **sem** texto comum ainda).
+    Atenção especial ao implementar D01/D06 se isso virar problema real em
+    produção.
 
 ## O que ainda está em aberto (não decida sozinho, pesquise/pergunte)
 

@@ -225,7 +225,8 @@ causa de ~95%+ da divergência visual medida (`docs/plano/relatorio-paridade.md`
 
 ## Fora de escopo
 
-Bold Italic (não decidido por B03), `DrawRotatedText` (sem chamadas no
+Bold Italic (não decidido por B03; adicionado depois em
+[D01-5](D01-5-bold-italico-tempo.md)), `DrawRotatedText` (sem chamadas no
 `View`, já registrado em A10), qualquer configuração de CLI para
 cor/tamanho/fonte de texto comum (não pedido), otimizar o tamanho do
 `.ttf` embutido (ex. subsetting de glifos) — se o custo de ~600-650 KB
@@ -296,6 +297,12 @@ literalmente no plano, foram necessários:
    específico também é bold+italic simultâneo → cai no fallback de Bold já
    previsto pela decisão de B03, com o aviso "bold italic... falling back
    to Bold" (confirmado nos logs).
+
+   **Atualização (D01-5):** esse fallback deixou de ser aceito como
+   limitação permanente — é exatamente o "49"/"50"/"51"... de Clair de
+   Lune que o usuário reportou depois, numa sessão futura, como "números
+   dos compassos em itálico no SVG mas não no Lottie". Bold Italic foi
+   adicionado; ver [D01-5](D01-5-bold-italico-tempo.md).
 3. **Não-regressão**: `xml:id`s não explícitos no MEI/MusicXML são gerados
    com `std::random_device` (`Object::GenerateHashID`), então rodar o
    binário duas vezes com o mesmo comando produz JSONs *diferentes* mesmo

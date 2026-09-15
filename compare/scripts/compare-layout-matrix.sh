@@ -54,6 +54,7 @@ FONTS=(
     "$REPO_ROOT/verovio/data/text/LiberationSerif-Regular.ttf"
     "$REPO_ROOT/verovio/data/text/LiberationSerif-Italic.ttf"
     "$REPO_ROOT/verovio/data/text/LiberationSerif-Bold.ttf"
+    "$REPO_ROOT/verovio/data/text/LiberationSerif-BoldItalic.ttf"
 )
 FONT_ARGS=()
 for font in "${FONTS[@]}"; do

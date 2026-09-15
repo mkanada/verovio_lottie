@@ -1888,14 +1888,14 @@ static bool ReadBinaryFile(const std::string &path, std::string &out)
     return true;
 }
 
-// Embeds the three vendored Liberation Serif styles (D01, B03's decision: Regular+Italic+Bold
-// always embedded together, whether or not the piece uses each one) into a dotLottie package's
-// f/ directory, read from <resourcePath>/text/LiberationSerif-<Style>.ttf - same
-// GetPath() + "/text/" + name pattern Resources::LoadFont already uses for Times*.xml
-// (resources.cpp:430).
+// Embeds the four vendored Liberation Serif styles (D01, B03's decision: Regular+Italic+Bold
+// always embedded together, whether or not the piece uses each one; BoldItalic added in
+// D01-5) into a dotLottie package's f/ directory, read from
+// <resourcePath>/text/LiberationSerif-<Style>.ttf - same GetPath() + "/text/" + name pattern
+// Resources::LoadFont already uses for Times*.xml (resources.cpp:430).
 static void EmbedCommonTextFonts(ZipFileWriter &zip, const std::string &resourcePath)
 {
-    static const char *const kStyles[] = { "Regular", "Italic", "Bold" };
+    static const char *const kStyles[] = { "Regular", "Italic", "Bold", "BoldItalic" };
     for (const char *style : kStyles) {
         const std::string fileName = std::string("LiberationSerif-") + style + ".ttf";
         std::string bytes;

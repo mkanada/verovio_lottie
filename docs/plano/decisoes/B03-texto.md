@@ -211,6 +211,13 @@ Registrado em 2026-09-13.
    texto que precisasse dos dois ao mesmo tempo simultaneamente ficaria sem
    um estilo exato; não visto no corpus amostrado até agora, mas é um limite
    a anotar caso apareça.
+
+   **Atualização (D01-5):** apareceu — números de tempo/rubato bold+italic
+   em Clair de Lune (D01 já tinha achado e documentado o caso em suas
+   próprias "Notas de execução", mas como limitação aceita). O usuário
+   pediu para investigar e corrigir ao notar o sintoma numa sessão
+   posterior; Bold Italic foi adicionado (4º arquivo `.ttf`, ~+200 KB
+   fixos por peça). Ver [D01-5](../D01-5-bold-italico-tempo.md).
 3. **Fonte: Liberation Serif**, confirmada — mesma família já usada pelo
    projeto via `fontTextLiberation`, licença SIL OFL. Precisa ser vendorizada
    como `.ttf` de verdade em `verovio/` (hoje só existe embutida em woff2
