@@ -19,6 +19,7 @@
 #include "csscolor.h"
 #include "glyph.h"
 #include "object.h"
+#include "smufl.h"
 #include "svgpathparser.h"
 #include "vrv.h"
 
@@ -493,6 +494,58 @@ void LottieDeviceContext::DrawText(
         }
     }
     else {
+        // Edge case (found in the wild: Clair de Lune's "pp" before "con sordina", MusicXML
+        // <words font-family="Leland Text"> literally embedding SMuFL PUA codepoints U+E520
+        // twice instead of using a <dynam>): a run reaching here with font->GetSmuflFont() ==
+        // SMUFL_NONE (e.g. inside a <dir>, via DrawDirString) can still consist entirely of
+        // SMuFL private-use-area codepoints (>= U+E000) that the music font resources DO have
+        // an outline for. Liberation Serif has no glyph there, so embedding it in the
+        // common-text ty:5 layer below would render nothing. SvgDeviceContext doesn't
+        // special-case this either (emits the same raw codepoints with
+        // font-family="Times, serif") - `compare svg-to-png` happens to show *something* there
+        // anyway only because it also calls fontdb's load_system_fonts(), so resvg's fallback
+        // grabs whatever glyph an unrelated, unvendored, environment-specific system font
+        // provides at that codepoint (confirmed not one of Leipzig/Bravura/Gootville/Leland,
+        // Verovio's own vendored music fonts - all four agree this codepoint is
+        // "dynamicPiano"/"p", not the hand-pointing icon `compare`'s reference PNG happened to
+        // show on this machine); not reproducible, and no such fallback chain exists here
+        // anyway. Draw the whole run as vector glyphs instead of silently dropping it, using
+        // the exact same mechanism as the SMuFL branch above - consistent with what Verovio's
+        // own glyph data says the codepoints mean, even where that no longer matches a
+        // `compare` reference PNG that was itself never a reliable target for this specific
+        // codepoint. The `c >= SMUFL_STARTING_CHAR (0xE000)` guard keeps this from ever
+        // touching a run of plain spaces (Leipzig's glyph table happens to define U+0020, for
+        // spacing between music symbols) or the literal flat/natural/sharp signs (U+266D-F,
+        // also in that table) - only genuine, otherwise-unrenderable PUA codepoints qualify.
+        const Resources *resources = this->GetResources();
+        assert(resources);
+        bool allGlyphsAvailable = !chars.empty();
+        for (char32_t c : chars) {
+            if (c < SMUFL_E000_brace || !resources->GetGlyph(c)) {
+                allGlyphsAvailable = false;
+                break;
+            }
+        }
+
+        if (allGlyphsAvailable) {
+            bool first = true;
+            for (char32_t c : chars) {
+                if (!first && letterSpacing != 0) {
+                    m_textPenX += letterSpacing;
+                    m_textChunkWidth += letterSpacing;
+                }
+                first = false;
+
+                const Glyph *glyph = resources->GetGlyph(c);
+                m_textChunkShapes.push_back(this->MakeGlyphShape(glyph, font, m_textPenX, m_textPenY));
+
+                const int advance = this->GetGlyphAdvance(glyph, font);
+                m_textPenX += advance;
+                m_textChunkWidth += advance;
+            }
+            return;
+        }
+
         // Common (non-SMuFL) text: D01 (docs/plano/D01-texto-comum.md) - built as a native
         // Lottie text layer (LottieWriter::WriteAnimation, embedCommonText) instead of a
         // shape, so it needs only the anchor/alignment/font metadata, not glyph outlines.

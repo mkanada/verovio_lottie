@@ -278,6 +278,34 @@ não elimina toda divergência de texto comum — resta a pegadinha de
 `<title>` aninhado acima, ortogonal à fonte — mas isola o efeito de "fonte
 fisicamente diferente" da conta.
 
+## Pegadinha do `resvg` (achada em D01-6, não corrigida): `load_system_fonts()`
+## torna a referência não-reprodutível para qualquer codepoint fora das
+## fontes do projeto
+
+`svg_to_png` chama `opt.fontdb_mut().load_system_fonts()` incondicionalmente
+— então qualquer caractere do SVG não coberto por uma das fontes carregadas
+via `--font` recebe o glifo de **alguma fonte instalada no sistema
+operacional local**, escolhida pelo `resvg` por critério próprio, não pelo
+projeto. Achado real: um MusicXML com `<words font-family="Leland Text">`
+contendo literalmente dois caracteres SMuFL de uso privado (U+E520) — o SVG
+de referência mostrava um ícone de mão apontando, mas nenhuma das quatro
+fontes musicais que o projeto vendoriza (Leipzig, Bravura, Gootville,
+Leland) desenha isso nesse código — todas concordam que é "p" (glifo
+`dynamicPiano`). O ícone vinha de uma quinta fonte, não identificada, só
+presente por acaso na máquina que gerou o PNG — não relacionada ao
+`"Leland Text"` real (nunca carregado) nem a nenhuma fonte do projeto, e
+não reprodutível em outra máquina. Detalhes em
+[`docs/plano/D01-6-glifo-smufl-em-texto-comum.md`](../docs/plano/D01-6-glifo-smufl-em-texto-comum.md)
+("Achado adicional").
+
+**Não corrigida** (ao contrário das pegadinhas acima) — mudar o
+comportamento de `svg_to_png` para qualquer codepoint fora do already-fixed
+"serif" genérico é uma decisão maior, sem caso de uso além deste até agora.
+Quem for comparar texto comum com um codepoint fora do Unicode padrão
+(fora da faixa coberta por Liberation Serif) deve considerar o PNG de
+referência **não confiável** para esse trecho específico, até isso ser
+revisitado.
+
 ## ThorVG local (D01-4): itálico sintético aplicado por cima de fonte já itálica
 
 O `compare` não usa mais o dotlottie-rs/ThorVG originais. Usa as cópias
