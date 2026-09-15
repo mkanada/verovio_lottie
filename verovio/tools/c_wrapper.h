@@ -56,8 +56,13 @@ bool vrvToolkit_loadZipDataBuffer(void *tkPtr, const unsigned char *data, int le
 void vrvToolkit_redoLayout(void *tkPtr, const char *c_options);
 void vrvToolkit_redoPagePitchPosLayout(void *tkPtr);
 const char *vrvToolkit_renderData(void *tkPtr, const char *data, const char *options);
+bool vrvToolkit_renderToDotLottieFile(void *tkPtr, const char *filename);
+bool vrvToolkit_renderToDotLottieHighlightFile(void *tkPtr, const char *filename, int pageNo);
 const char *vrvToolkit_renderToExpansionMap(void *tkPtr);
 bool vrvToolkit_renderToExpansionMapFile(void *tkPtr, const char *filename);
+const char *vrvToolkit_renderToLottie(void *tkPtr, int pageNo);
+const char *vrvToolkit_renderToLottieAnimation(void *tkPtr);
+bool vrvToolkit_renderToLottieFile(void *tkPtr, const char *filename, int pageNo);
 const char *vrvToolkit_renderToMIDI(void *tkPtr);
 bool vrvToolkit_renderToMIDIFile(void *tkPtr, const char *filename);
 const char *vrvToolkit_renderToPAE(void *tkPtr);

@@ -293,6 +293,18 @@ const char *vrvToolkit_renderData(void *tkPtr, const char *data, const char *opt
     return tk->GetCString();
 }
 
+bool vrvToolkit_renderToDotLottieFile(void *tkPtr, const char *filename)
+{
+    Toolkit *tk = static_cast<Toolkit *>(tkPtr);
+    return tk->RenderToDotLottieFile(filename);
+}
+
+bool vrvToolkit_renderToDotLottieHighlightFile(void *tkPtr, const char *filename, int pageNo)
+{
+    Toolkit *tk = static_cast<Toolkit *>(tkPtr);
+    return tk->RenderToDotLottieHighlightFile(filename, pageNo);
+}
+
 const char *vrvToolkit_renderToExpansionMap(void *tkPtr)
 {
     Toolkit *tk = static_cast<Toolkit *>(tkPtr);
@@ -304,6 +316,26 @@ bool vrvToolkit_renderToExpansionMapFile(void *tkPtr, const char *filename)
 {
     Toolkit *tk = static_cast<Toolkit *>(tkPtr);
     return tk->RenderToExpansionMapFile(filename);
+}
+
+const char *vrvToolkit_renderToLottie(void *tkPtr, int pageNo)
+{
+    Toolkit *tk = static_cast<Toolkit *>(tkPtr);
+    tk->SetCString(tk->RenderToLottie(pageNo));
+    return tk->GetCString();
+}
+
+const char *vrvToolkit_renderToLottieAnimation(void *tkPtr)
+{
+    Toolkit *tk = static_cast<Toolkit *>(tkPtr);
+    tk->SetCString(tk->RenderToLottieAnimation());
+    return tk->GetCString();
+}
+
+bool vrvToolkit_renderToLottieFile(void *tkPtr, const char *filename, int pageNo)
+{
+    Toolkit *tk = static_cast<Toolkit *>(tkPtr);
+    return tk->RenderToLottieFile(filename, pageNo);
 }
 
 const char *vrvToolkit_renderToMIDI(void *tkPtr)

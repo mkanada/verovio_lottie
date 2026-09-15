@@ -1,0 +1,7 @@
+.dart_tool/
+.packages
+pubspec.lock
+libverovio.so
+libverovio.dylib
+verovio.dll
+*.lottie

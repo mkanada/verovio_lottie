@@ -250,6 +250,7 @@ Decisões **já tomadas** (não reabrir): ver "Decisões arquiteturais já tomad
 | [D05](D05-casos-de-borda-estilo.md) | Casos de borda de estilo (opacidade, tracejado, visibilidade, cue) | A06, A09, A10 | — | concluído (3/4 bateram sem mudança; opacidade achou um bug real, mas na ferramenta `compare` — ver "Notas de execução" no doc) |
 | [D06](D06-tamanho-do-arquivo.md) | Tamanho do arquivo — reuso de glifos repetidos | D01, A13 | remedir e perguntar antes de decidir a técnica | bloqueado (remedir após D01) |
 | [E00](E00-bindings-opcional.md) | Bindings JS/Python (opcional) | A12 | — | opcional |
+| [E01](E01-bindings-dart-ffi.md) | Bindings Dart FFI (versão "library" — wrapper C + `libverovio.so` + pacote Dart), padrão `verovio_flutter` | A12, A04 | — | concluído |
 
 Ordem sugerida: A01 → A02 → A03 → A04 → A05 → A06 → A07 → A08 → A09 → A10 →
 A11 → A12 → A13. B01 pode começar em paralelo assim que A05 terminar (não
