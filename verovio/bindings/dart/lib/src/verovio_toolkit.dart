@@ -53,13 +53,46 @@ class VerovioToolkit {
 
   static DynamicLibrary _openLibrary(String? path) {
     if (path != null) return DynamicLibrary.open(path);
+    // Honour an explicit override for CI / custom installs.
+    final envPath = Platform.environment['VEROVIO_LIBRARY_PATH'];
+    if (envPath != null && envPath.isNotEmpty) {
+      return DynamicLibrary.open(envPath);
+    }
     if (Platform.isLinux || Platform.isAndroid) {
+      // `DynamicLibrary.open('libverovio.so')` only searches the system
+      // loader path (LD_LIBRARY_PATH etc.), not the working directory, so
+      // resolve the .so shipped next to this package first.
+      for (final candidate in _candidateLibraryPaths('libverovio.so')) {
+        if (File(candidate).existsSync()) return DynamicLibrary.open(candidate);
+      }
       return DynamicLibrary.open('libverovio.so');
     }
     if (Platform.isMacOS) return DynamicLibrary.open('libverovio.dylib');
     if (Platform.isWindows) return DynamicLibrary.open('verovio.dll');
     // iOS links VerovioCore statically into the host app/framework.
     return DynamicLibrary.process();
+  }
+
+  /// Absolute paths that may hold the packaged native library, in priority
+  /// order: cwd (covers `dart test` from the package dir) then the directory
+  /// containing this library's package (covers running from elsewhere).
+  static Iterable<String> _candidateLibraryPaths(String fileName) sync* {
+    yield '${Directory.current.path}/$fileName';
+    try {
+      final scriptPath =
+          Platform.script.toFilePath();
+      var dir = File(scriptPath).parent;
+      // Walk up from e.g. .dart_tool/pub/... or lib/src/ to the package root.
+      for (var i = 0; i < 6; i++) {
+        yield '${dir.path}/$fileName';
+        final parent = dir.parent;
+        if (parent.path == dir.path) break;
+        dir = parent;
+      }
+    } catch (_) {
+      // Platform.script may be non-file (e.g. data: URI); ignore and fall back
+      // to the bare library name below.
+    }
   }
 
   final VerovioBindings _bindings;
