@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 VEROVIO_BIN="$REPO_ROOT/verovio/tools/verovio"
-COMPARE_BIN="$REPO_ROOT/compare/target/release/compare"
+COMPARE_BIN="$REPO_ROOT/compare/build/linux/x64/release/bundle/compare"
 RESOURCE_PATH="$REPO_ROOT/verovio/data"
 OUT_DIR="$REPO_ROOT/compare/out"
 
@@ -28,8 +28,16 @@ fi
 
 if [[ ! -x "$COMPARE_BIN" ]]; then
     echo "Binário do compare não encontrado em $COMPARE_BIN." >&2
-    echo "Compile com: cd $REPO_ROOT/compare && cargo build --release" >&2
+    echo "Compile com: cd $REPO_ROOT/compare && flutter build linux --release" >&2
     exit 1
+fi
+
+# O compare é um app Flutter/Linux: mesmo em modo batch precisa de um display
+# para inicializar o motor. Sem DISPLAY, roda sob xvfb-run.
+if [[ -z "${DISPLAY:-}" ]] && command -v xvfb-run >/dev/null 2>&1; then
+    COMPARE_RUN=(xvfb-run -a "$COMPARE_BIN")
+else
+    COMPARE_RUN=("$COMPARE_BIN")
 fi
 
 if [[ ! -f "$INPUT_FILE" ]]; then
@@ -93,10 +101,10 @@ print(page - 1)
 PYEOF
 )
     echo "==> Lottie -> PNG (pacote dotLottie existente, frame $FRAME, ${WIDTH}x${HEIGHT})"
-    "$COMPARE_BIN" lottie-to-png "$INPUT_FILE" "$PREFIX-lottie.png" --width "$WIDTH" --height "$HEIGHT" --frame "$FRAME"
+    "${COMPARE_RUN[@]}" lottie-to-png "$INPUT_FILE" "$PREFIX-lottie.png" --width "$WIDTH" --height "$HEIGHT" --frame "$FRAME"
 
     echo "==> Diff (tolerância $TOLERANCE)"
-    "$COMPARE_BIN" diff "$PREFIX-svg.png" "$PREFIX-lottie.png" "$PREFIX-diff.png" --tolerance "$TOLERANCE"
+    "${COMPARE_RUN[@]}" diff "$PREFIX-svg.png" "$PREFIX-lottie.png" "$PREFIX-diff.png" --tolerance "$TOLERANCE"
 
     exit 0
 fi
@@ -131,7 +139,7 @@ echo "==> Renderizando Lottie (página $PAGE)"
 mv "$TMP_PREFIX.json" "$PREFIX.json"
 
 echo "==> SVG -> PNG"
-"$COMPARE_BIN" svg-to-png "$PREFIX.svg" "$PREFIX-svg.png" "${FONT_ARGS[@]}" --pin-serif-family "Liberation Serif"
+"${COMPARE_RUN[@]}" svg-to-png "$PREFIX.svg" "$PREFIX-svg.png" "${FONT_ARGS[@]}" --pin-serif-family "Liberation Serif"
 
 echo "==> Lendo dimensões do PNG do SVG"
 read -r WIDTH HEIGHT < <(python3 - "$PREFIX-svg.png" <<'PYEOF'
@@ -146,7 +154,7 @@ PYEOF
 )
 
 echo "==> Lottie -> PNG (${WIDTH}x${HEIGHT})"
-"$COMPARE_BIN" lottie-to-png "$PREFIX.json" "$PREFIX-lottie.png" --width "$WIDTH" --height "$HEIGHT"
+"${COMPARE_RUN[@]}" lottie-to-png "$PREFIX.json" "$PREFIX-lottie.png" --width "$WIDTH" --height "$HEIGHT"
 
 echo "==> Diff (tolerância $TOLERANCE)"
-"$COMPARE_BIN" diff "$PREFIX-svg.png" "$PREFIX-lottie.png" "$PREFIX-diff.png" --tolerance "$TOLERANCE"
+"${COMPARE_RUN[@]}" diff "$PREFIX-svg.png" "$PREFIX-lottie.png" "$PREFIX-diff.png" --tolerance "$TOLERANCE"

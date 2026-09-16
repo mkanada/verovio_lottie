@@ -32,8 +32,9 @@ símbolo com `graft grep "<símbolo>"`.
   no momento da configuração (`verovio/cmake/CMakeLists.txt` L185).
 - **Binário**: `verovio/tools/verovio`, sempre com
   `--resource-path verovio/data`.
-- **Ferramenta de comparação**: `cd compare && cargo build --release` →
-  `compare/target/release/compare` (ver `compare/README.md`).
+- **Ferramenta de comparação**: `cd compare && flutter build linux --release` →
+  `compare/build/linux/x64/release/bundle/compare` (ver `compare/README.md`;
+  app Flutter — rode sob `xvfb-run` sem display).
 - **Saídas temporárias** de testes vão em `compare/out/` (ignorado pelo git a
   partir do passo A05). Nunca em `verovio/`.
 - **Estilo**: imite `include/vrv/svgdevicecontext.h` e

@@ -18,7 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 VEROVIO_BIN="$REPO_ROOT/verovio/tools/verovio"
-COMPARE_BIN="$REPO_ROOT/compare/target/release/compare"
+COMPARE_BIN="$REPO_ROOT/compare/build/linux/x64/release/bundle/compare"
 RESOURCE_PATH="$REPO_ROOT/verovio/data"
 OUT_DIR="$REPO_ROOT/compare/out/c05"
 
@@ -30,8 +30,16 @@ fi
 
 if [[ ! -x "$COMPARE_BIN" ]]; then
     echo "Binário do compare não encontrado em $COMPARE_BIN." >&2
-    echo "Compile com: cd $REPO_ROOT/compare && cargo build --release" >&2
+    echo "Compile com: cd $REPO_ROOT/compare && flutter build linux --release" >&2
     exit 1
+fi
+
+# O compare é um app Flutter/Linux: mesmo em modo batch precisa de um display
+# para inicializar o motor. Sem DISPLAY, roda sob xvfb-run.
+if [[ -z "${DISPLAY:-}" ]] && command -v xvfb-run >/dev/null 2>&1; then
+    COMPARE_RUN=(xvfb-run -a "$COMPARE_BIN")
+else
+    COMPARE_RUN=("$COMPARE_BIN")
 fi
 
 if [[ ! -f "$INPUT_FILE" ]]; then
@@ -113,7 +121,7 @@ PYEOF
 echo "==> $INCLUDED de $TOTAL instantes de onset reais incluídos (roteiro em $PIECE_OUT_DIR/roteiro.txt)"
 
 echo "==> compare sm-render (sm_highlight, ${WIDTH}x${HEIGHT})"
-"$COMPARE_BIN" sm-render "$PIECE_OUT_DIR/$NAME.lottie" "$PIECE_OUT_DIR" \
+"${COMPARE_RUN[@]}" sm-render "$PIECE_OUT_DIR/$NAME.lottie" "$PIECE_OUT_DIR" \
     --sm sm_highlight --width "$WIDTH" --height "$HEIGHT" \
     --script "$(cat "$PIECE_OUT_DIR/script.txt")" --snap "$(cat "$PIECE_OUT_DIR/snap.txt")" \
     --prefix playback

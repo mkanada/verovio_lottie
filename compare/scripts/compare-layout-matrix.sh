@@ -19,7 +19,7 @@ INPUT_FILE=${1:-"$REPO_ROOT/corpus/mei/Chopin_Etude_Op10_No9.mei"}
 TOLERANCE=${2:-32}
 
 VEROVIO_BIN="$REPO_ROOT/verovio/tools/verovio"
-COMPARE_BIN="$REPO_ROOT/compare/target/release/compare"
+COMPARE_BIN="$REPO_ROOT/compare/build/linux/x64/release/bundle/compare"
 RESOURCE_PATH="$REPO_ROOT/verovio/data"
 OUT_DIR="$REPO_ROOT/docs/matriz-layout"
 TMP_PREFIX="$OUT_DIR/_compare-layout-matrix-tmp"
@@ -32,8 +32,16 @@ fi
 
 if [[ ! -x "$COMPARE_BIN" ]]; then
     echo "Binário do compare não encontrado em $COMPARE_BIN." >&2
-    echo "Compile com: cd $REPO_ROOT/compare && cargo build --release" >&2
+    echo "Compile com: cd $REPO_ROOT/compare && flutter build linux --release" >&2
     exit 1
+fi
+
+# O compare é um app Flutter/Linux: mesmo em modo batch precisa de um display
+# para inicializar o motor. Sem DISPLAY, roda sob xvfb-run.
+if [[ -z "${DISPLAY:-}" ]] && command -v xvfb-run >/dev/null 2>&1; then
+    COMPARE_RUN=(xvfb-run -a "$COMPARE_BIN")
+else
+    COMPARE_RUN=("$COMPARE_BIN")
 fi
 
 if [[ ! -f "$INPUT_FILE" ]]; then
@@ -132,7 +140,7 @@ for SIZE in "${SIZES[@]}"; do
                 LOTTIE_SIZE=$(stat -c%s "$LOTTIE_FILE")
 
                 echo "==> Página 1: SVG -> PNG"
-                "$COMPARE_BIN" svg-to-png "$PREFIX.svg" "$PREFIX-svg.png" "${FONT_ARGS[@]}" --pin-serif-family "Liberation Serif"
+                "${COMPARE_RUN[@]}" svg-to-png "$PREFIX.svg" "$PREFIX-svg.png" "${FONT_ARGS[@]}" --pin-serif-family "Liberation Serif"
                 rm -f "$PREFIX.svg"
 
                 read -r WIDTH HEIGHT < <(python3 - "$PREFIX-svg.png" <<'PYEOF'
@@ -165,10 +173,10 @@ print(0)
 PYEOF
 )
                 echo "==> Página 1: Lottie -> PNG (frame $FRAME, ${WIDTH}x${HEIGHT})"
-                "$COMPARE_BIN" lottie-to-png "$LOTTIE_FILE" "$PREFIX-lottie.png" --width "$WIDTH" --height "$HEIGHT" --frame "$FRAME"
+                "${COMPARE_RUN[@]}" lottie-to-png "$LOTTIE_FILE" "$PREFIX-lottie.png" --width "$WIDTH" --height "$HEIGHT" --frame "$FRAME"
 
                 echo "==> Página 1: diff (tolerância $TOLERANCE)"
-                DIFF_OUTPUT=$("$COMPARE_BIN" diff "$PREFIX-svg.png" "$PREFIX-lottie.png" "$PREFIX-diff.png" --tolerance "$TOLERANCE")
+                DIFF_OUTPUT=$("${COMPARE_RUN[@]}" diff "$PREFIX-svg.png" "$PREFIX-lottie.png" "$PREFIX-diff.png" --tolerance "$TOLERANCE")
                 echo "$DIFF_OUTPUT"
 
                 PCT=$(echo "$DIFF_OUTPUT" | grep -oP '\(\K[0-9.]+(?=%\))')

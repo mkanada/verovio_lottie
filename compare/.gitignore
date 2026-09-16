@@ -1,6 +1,15 @@
-/target
+# Binário e intermediários do `flutter build linux`
+/build
+# Saídas dos scripts (nunca versionar)
 /out
 # Gerado por fixtures/b01/gen.py só para a medição de escala do E5
 # (docs/plano/spikes/B01-resultado.md) — grande (~830KB) e trivialmente
 # regenerável, ao contrário de notes.lottie.
 /fixtures/b01/sm_scale.json
+# Arquivos gerados pelo tooling Flutter/Dart (pubspec.lock fica versionado
+# de propósito, como o Cargo.lock antes dele: build reproduzível da ferramenta)
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+linux/flutter/generated_plugin_registrant.*
