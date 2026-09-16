@@ -14,7 +14,10 @@ Stack híbrida, cada lado com o mecanismo mais adequado:
   usando o [dotlottie_flutter](https://pub.dev/packages/dotlottie_flutter)
   (mesmo motor `dotlottie-rs`/ThorVG que o widget `DotLottieView` usa no
   Linux, acessado aqui via FFI direto) para renderizar Lottie/dotLottie em
-  PNG por software, sem precisar de navegador headless.
+  PNG por software, sem precisar de navegador headless. `lottie-to-png` tem
+  um segundo motor opcional (`--engine widget`) que renderiza através do
+  widget `ScoreViewer` de verdade (pacote `verovio_viewer`, ver "Engine
+  `widget`" abaixo) em vez do FFI direto — só para comparação de página.
 
 O diff é pixel a pixel, com imagem de diferença e estatísticas — a decisão
 de "passou/falhou" continua sendo visual/manual, sem limiar automático
@@ -150,6 +153,12 @@ Verovio). Compõe o resultado sobre fundo branco opaco.
   "Fonte comum sem serifa" abaixo. Não usado pelos scripts hoje (a decisão
   de tirar a fonte embutida do exportador não foi tomada), mas já
   disponível para retomar o assunto.
+- `--engine native|widget` (padrão `native`): ver "Engine `widget`: via
+  ScoreViewer" abaixo. Com `widget`, use `--page` em vez de `--frame`;
+  `--slot`/`--sample`/`--preload-font` não se aplicam (erro se informados).
+- `--page <n>` (só com `--engine widget`, padrão `0`): página (0-based) a
+  exibir, resolvida via `ScoreViewer.goToPage` — ignorado com o engine
+  `native` (que usa `--frame` diretamente).
 
 ### 3. Comparar dois PNGs
 
@@ -214,6 +223,42 @@ Relógio manual de 1ms (`state_machine_tick`), ações do instante `t` rodando
 | `compare/scripts/sm-playback.sh <arquivo> [máx-eventos] [seed]` | Gera pacote e timemap com a mesma seed e dispara o destaque nos onsets reais do timemap via `sm-render` (C05) | `compare/out/c05/<peça>/` |
 
 `compare/out/` é ignorado pelo git.
+
+## Engine `widget`: via `ScoreViewer` (`verovio_viewer`)
+
+`lottie-to-png --engine widget` renderiza através do widget `ScoreViewer` de
+verdade (`package:verovio_viewer`, `compare/lib/src/widget_render.dart`) —
+o mesmo componente que uma UI de verdade (zywny, ou uma futura inspeção
+visual do `compare`) usaria para exibir o `.lottie` — em vez do FFI direto
+de `lottie_native.dart`. Existe para validar o caminho de código do widget
+em si (`LottieFileServer` servindo o arquivo por HTTP local, `pageRestFrames`
+lendo os markers `pageN` de `a/score.json`), não só o motor nativo por trás
+dele.
+
+Por isso é deliberadamente mais restrito que o engine `native`: só compara a
+página em repouso (`--page`, não `--frame`), exige um pacote `.lottie` de
+verdade (`pageRestFrames` decodifica o arquivo como zip — um `.json` avulso,
+como o gerado por `verovio -t lottie` para uma página só, não tem os markers
+`pageN` e falha) e não aceita `--slot`/`--sample`/`--preload-font` (nada de
+state machine/slot aqui, só layout estático de página — ver
+`docs/plano/decisoes/B02-mecanismo-destaque.md`).
+
+Mecanismo: `runApp` (não `flutter test`) hospedando `ScoreViewer` dentro de
+um `RepaintBoundary`, capturado com `RenderRepaintBoundary.toImage` — a
+mesma API que qualquer app Flutter usa para "compartilhar como imagem", não
+algo específico de teste. O tamanho de saída (`--width`/`--height`) é
+imposto ao widget via `OverflowBox` com constraints exatas, independente do
+tamanho real da janela nativa (GLFW) por trás — por isso funciona sob
+`xvfb-run` normalmente, com qualquer resolução de tela virtual. Depois de
+`ScoreViewer.goToPage`, espera a confirmação de `onRender` (frame certo já
+processado pelo motor nativo) mais uma folga fixa + alguns frames de verdade
+assentados (`SchedulerBinding.endOfFrame`), porque `onRender` dispara antes
+do decode assíncrono do `ui.Image` correspondente terminar — ver o
+comentário em `onRender` de `verovio_viewer/lib/src/score_viewer.dart`.
+Validado por spike nesta sessão: página 0 e a última página de
+`Clair_de_Lune__Debussy.lottie` batem 0,0000% contra o engine `native` no
+mesmo frame, e diferem 15,37% entre si (confirma que a navegação de página
+realmente aconteceu, não ficou presa no frame inicial).
 
 ## Arquitetura: FFI direto em vez do widget `DotLottieView`
 

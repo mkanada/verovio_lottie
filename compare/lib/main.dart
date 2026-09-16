@@ -8,10 +8,13 @@
 /// `<use>` repetido gigante e fora de lugar num achado real do corpus) e
 /// foi trocado por `resvg`, que não tem essas limitações.
 ///
-/// O app não abre janela útil: inicializa o binding do Flutter (necessário
-/// para o motor do `dotlottie_flutter` no Linux), executa o job pedido,
-/// imprime o resultado e sai com o código apropriado (0 ok, 1 erro de
-/// execução, 2 erro de uso). Rode sob `xvfb-run` em máquinas sem display.
+/// O app não abre janela útil (exceto `lottie-to-png --engine widget`, que
+/// só existe pra hospedar o widget `ScoreViewer` do `verovio_viewer` sendo
+/// capturado via `RenderRepaintBoundary` — ver `src/widget_render.dart`):
+/// inicializa o binding do Flutter (necessário para o motor do
+/// `dotlottie_flutter` no Linux), executa o job pedido, imprime o resultado
+/// e sai com o código apropriado (0 ok, 1 erro de execução, 2 erro de uso).
+/// Rode sob `xvfb-run` em máquinas sem display.
 library;
 
 import 'dart:io';
@@ -23,31 +26,66 @@ import 'src/render_jobs.dart';
 
 ArgParser _baseCommands() {
   final parser = ArgParser();
-  parser.addCommand('lottie-to-png', ArgParser()
-    ..addOption('width', mandatory: true)
-    ..addOption('height', mandatory: true)
-    ..addOption('frame', defaultsTo: '0')
-    ..addMultiOption('slot',
-        help: 'Slot de cor "id:r,g,b" (repetível).', splitCommas: false)
-    ..addMultiOption('sample',
-        help: 'Pixel "x,y" a amostrar (repetível).', splitCommas: false)
-    ..addMultiOption('preload-font',
-        help: 'Fonte "nome:caminho.ttf" a pré-carregar no motor antes de '
+  parser.addCommand(
+    'lottie-to-png',
+    ArgParser()
+      ..addOption('width', mandatory: true)
+      ..addOption('height', mandatory: true)
+      ..addOption('frame', defaultsTo: '0')
+      ..addOption(
+        'engine',
+        allowed: ['native', 'widget'],
+        defaultsTo: 'native',
+        help:
+            'native = FFI direto no libdotlottie_rs.so (padrão); '
+            'widget = via o widget ScoreViewer do verovio_viewer, '
+            'screenshot com RenderRepaintBoundary — só compara página '
+            '(--page), sem --frame/--slot/--sample/--preload-font, e exige '
+            'um pacote .lottie de verdade (não .json avulso).',
+      )
+      ..addOption(
+        'page',
+        defaultsTo: '0',
+        help:
+            'Página (0-based) a exibir com --engine widget; ignorado com '
+            'o engine native (use --frame).',
+      )
+      ..addMultiOption(
+        'slot',
+        help: 'Slot de cor "id:r,g,b" (repetível).',
+        splitCommas: false,
+      )
+      ..addMultiOption(
+        'sample',
+        help: 'Pixel "x,y" a amostrar (repetível).',
+        splitCommas: false,
+      )
+      ..addMultiOption(
+        'preload-font',
+        help:
+            'Fonte "nome:caminho.ttf" a pré-carregar no motor antes de '
             'renderizar, via dotlottie_load_font (repetível) - spike para '
             'fonte provida pelo host em vez de embutida no pacote.',
-        splitCommas: false));
-  parser.addCommand('diff', ArgParser()
-    ..addOption('tolerance', defaultsTo: '0'));
-  parser.addCommand('sm-render', ArgParser()
-    ..addOption('sm')
-    ..addOption('sm-file')
-    ..addOption('width', mandatory: true)
-    ..addOption('height', mandatory: true)
-    ..addOption('script', defaultsTo: '')
-    ..addOption('snap', defaultsTo: '')
-    ..addOption('prefix', defaultsTo: 'frame')
-    ..addMultiOption('sample', splitCommas: false)
-    ..addFlag('measure-load', defaultsTo: false));
+        splitCommas: false,
+      ),
+  );
+  parser.addCommand(
+    'diff',
+    ArgParser()..addOption('tolerance', defaultsTo: '0'),
+  );
+  parser.addCommand(
+    'sm-render',
+    ArgParser()
+      ..addOption('sm')
+      ..addOption('sm-file')
+      ..addOption('width', mandatory: true)
+      ..addOption('height', mandatory: true)
+      ..addOption('script', defaultsTo: '')
+      ..addOption('snap', defaultsTo: '')
+      ..addOption('prefix', defaultsTo: 'frame')
+      ..addMultiOption('sample', splitCommas: false)
+      ..addFlag('measure-load', defaultsTo: false),
+  );
   return parser;
 }
 
@@ -56,7 +94,8 @@ void _usage(ArgParser parser) {
   stderr.writeln('');
   stderr.writeln('Comandos: lottie-to-png, diff, sm-render.');
   stderr.writeln(
-      '(svg-to-png agora é o binário separado compare/svg_render/, não um comando daqui)');
+    '(svg-to-png agora é o binário separado compare/svg_render/, não um comando daqui)',
+  );
   stderr.writeln(parser.usage);
 }
 
@@ -81,7 +120,8 @@ Future<void> main(List<String> args) async {
       case 'lottie-to-png':
         if (command.rest.length != 2) {
           throw FormatException(
-              'lottie-to-png <entrada.lottie|.json> <saída.png> --width W --height H');
+            'lottie-to-png <entrada.lottie|.json> <saída.png> --width W --height H',
+          );
         }
         await runLottieToPng(
           input: command.rest[0],
@@ -92,6 +132,8 @@ Future<void> main(List<String> args) async {
           slots: command['slot'] as List<String>,
           samples: command['sample'] as List<String>,
           preloadFonts: command['preload-font'] as List<String>,
+          engine: command['engine'] as String,
+          page: int.parse(command['page'] as String),
         );
       case 'diff':
         if (command.rest.length != 3) {

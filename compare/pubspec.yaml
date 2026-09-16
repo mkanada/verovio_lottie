@@ -1,5 +1,5 @@
 name: compare
-description: "Comparacao visual SVG vs. dotLottie do verovio_lottie: SVG via resvg (compare/svg_render/), dotLottie via dotlottie_flutter FFI."
+description: "Comparacao visual SVG vs. dotLottie do verovio_lottie: SVG via resvg (compare/svg_render/), dotLottie via dotlottie_flutter FFI ou via o widget ScoreViewer do verovio_viewer."
 publish_to: 'none'
 version: 0.2.0+1
 
@@ -10,6 +10,8 @@ dependencies:
   flutter:
     sdk: flutter
   dotlottie_flutter: ^0.1.7
+  verovio_viewer:
+    path: ../verovio_viewer
   image: ^4.5.4
   archive: ^4.0.7
   args: ^2.7.0

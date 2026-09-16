@@ -25,6 +25,7 @@ class ScoreViewer extends StatefulWidget {
     this.onPause,
     this.onStop,
     this.onComplete,
+    this.onRender,
   });
 
   /// Absolute path to a `.lottie` file on disk.
@@ -51,6 +52,14 @@ class ScoreViewer extends StatefulWidget {
   final VoidCallback? onPause;
   final VoidCallback? onStop;
   final VoidCallback? onComplete;
+
+  /// Fired once per frame the native player actually re-renders (including
+  /// after a manual [ScoreViewerState.goToPage] seek) — the native side's
+  /// signal that a frame was produced, not that Flutter has decoded/painted
+  /// it yet (that still goes through an async image decode on the next
+  /// engine frames). A caller that needs a guaranteed-painted screenshot
+  /// should still settle a couple of extra frames after this fires.
+  final void Function(double frameNo)? onRender;
 
   @override
   ScoreViewerState createState() => ScoreViewerState();
@@ -132,13 +141,13 @@ class ScoreViewerState extends State<ScoreViewer> {
         await _controller?.setFrame(_pageRests[_currentPage].toDouble());
         widget.onReady?.call();
       },
-      onLoadError: () => widget.onError?.call(
-        StateError('DotLottieView failed to load $url'),
-      ),
+      onLoadError: () =>
+          widget.onError?.call(StateError('DotLottieView failed to load $url')),
       onPlay: widget.onPlay,
       onPause: widget.onPause,
       onStop: widget.onStop,
       onComplete: widget.onComplete,
+      onRender: widget.onRender,
     );
   }
 }

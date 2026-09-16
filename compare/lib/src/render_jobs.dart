@@ -13,6 +13,7 @@ import 'package:image/image.dart' as img;
 import 'diff.dart';
 import 'lottie_native.dart';
 import 'script.dart';
+import 'widget_render.dart';
 
 /// Compõe um buffer ARGB8888S (alpha reto) sobre branco opaco e devolve um
 /// PNG sempre opaco — mesma convenção da versão anterior.
@@ -26,8 +27,14 @@ img.Image pixelsToWhitePng(Uint32List buffer, int width, int height) {
     final r = (px >> 16) & 0xFF;
     final g = (px >> 8) & 0xFF;
     final b = px & 0xFF;
-    out.setPixelRgba(i % width, i ~/ width, blend(r, a), blend(g, a),
-        blend(b, a), 255);
+    out.setPixelRgba(
+      i % width,
+      i ~/ width,
+      blend(r, a),
+      blend(g, a),
+      blend(b, a),
+      255,
+    );
   }
   return out;
 }
@@ -39,7 +46,8 @@ void _loadInto(NativePlayer player, String input) {
     player.loadJson(File(input).readAsStringSync());
   } else {
     throw ArgumentError(
-        'extensão não suportada em $input; use .lottie ou .json');
+      'extensão não suportada em $input; use .lottie ou .json',
+    );
   }
 }
 
@@ -61,9 +69,27 @@ Future<void> runLottieToPng({
   required List<String> slots,
   required List<String> samples,
   List<String> preloadFonts = const [],
+  String engine = 'native',
+  int page = 0,
 }) async {
   if (width <= 0 || height <= 0) {
     throw ArgumentError('--width e --height precisam ser maiores que zero');
+  }
+  if (engine == 'widget') {
+    if (slots.isNotEmpty || samples.isNotEmpty || preloadFonts.isNotEmpty) {
+      throw ArgumentError(
+        '--engine widget só compara a página em repouso (sem --slot/'
+        '--sample/--preload-font) — use o engine native para isso',
+      );
+    }
+    await renderScoreViewerToPng(
+      lottiePath: input,
+      page: page,
+      width: width,
+      height: height,
+      output: output,
+    );
+    return;
   }
   final player = NativePlayer();
   try {
@@ -75,7 +101,8 @@ Future<void> runLottieToPng({
       final colon = spec.indexOf(':');
       if (colon < 0) {
         throw FormatException(
-            '--preload-font mal formado (esperado nome:caminho.ttf): $spec');
+          '--preload-font mal formado (esperado nome:caminho.ttf): $spec',
+        );
       }
       final name = spec.substring(0, colon);
       final path = spec.substring(colon + 1);
@@ -87,13 +114,13 @@ Future<void> runLottieToPng({
     _loadInto(player, input);
     if (player.totalFrames() <= 0) {
       throw StateError(
-          'nenhuma animação carregada — verifique se o arquivo é um Lottie/dotLottie válido');
+        'nenhuma animação carregada — verifique se o arquivo é um Lottie/dotLottie válido',
+      );
     }
     // Slots de cor (theming v2, modo interativo M3): independem do frame.
     for (final s in slots) {
       final slot = parseColorSlot(s);
-      player.setColorSlot(
-          slot.id, slot.rgb[0], slot.rgb[1], slot.rgb[2]);
+      player.setColorSlot(slot.id, slot.rgb[0], slot.rgb[1], slot.rgb[2]);
     }
     player.seekFrame(frame);
     player.flush();
@@ -106,8 +133,7 @@ Future<void> runLottieToPng({
       final y = int.parse(s.substring(comma + 1).trim());
       stdout.writeln(_fmtSample(buffer, width, x, y));
     }
-    stdout.writeln(
-        'PNG salvo em $output (${width}x$height, frame $frame)');
+    stdout.writeln('PNG salvo em $output (${width}x$height, frame $frame)');
   } finally {
     player.dispose();
   }
@@ -122,7 +148,8 @@ Future<void> runDiff({
   final result = diffPngFiles(a, b, output, tolerance: tolerance);
   stdout.writeln('Pixels comparados: ${result.total}');
   stdout.writeln(
-      'Pixels diferentes (tolerância $tolerance): ${result.diffPixels} (${result.pct.toStringAsFixed(4)}%)');
+    'Pixels diferentes (tolerância $tolerance): ${result.diffPixels} (${result.pct.toStringAsFixed(4)}%)',
+  );
   stdout.writeln('Maior diferença de canal observada: ${result.maxDiff}');
   stdout.writeln('Imagem de diferença salva em $output');
 }
@@ -144,7 +171,9 @@ Future<void> runSmRender({
     throw ArgumentError('--width e --height precisam ser maiores que zero');
   }
   if ((sm == null) == (smFile == null)) {
-    throw ArgumentError('informe --sm <id-no-pacote> ou --sm-file <json-avulso>');
+    throw ArgumentError(
+      'informe --sm <id-no-pacote> ou --sm-file <json-avulso>',
+    );
   }
   await Directory(outDir).create(recursive: true);
   if (!input.endsWith('.lottie')) {
@@ -159,16 +188,16 @@ Future<void> runSmRender({
     if (sm != null) {
       engine = player.loadStateMachineById(sm);
     } else {
-      engine =
-          player.loadStateMachineData(File(smFile!).readAsStringSync());
+      engine = player.loadStateMachineData(File(smFile!).readAsStringSync());
     }
     final loadElapsed = DateTime.now().difference(loadStart);
     final startStart = DateTime.now();
     engine.start();
     final startElapsed = DateTime.now().difference(startStart);
     stdout.writeln(
-        'state_machine_load: ${(loadElapsed.inMicroseconds / 1000).toStringAsFixed(3)}ms — '
-        'start(): ${(startElapsed.inMicroseconds / 1000).toStringAsFixed(3)}ms');
+      'state_machine_load: ${(loadElapsed.inMicroseconds / 1000).toStringAsFixed(3)}ms — '
+      'start(): ${(startElapsed.inMicroseconds / 1000).toStringAsFixed(3)}ms',
+    );
     if (measureLoad) return;
     final actions = parseScript(script);
     final snaps = parseSnap(snap);
@@ -208,8 +237,7 @@ Future<void> runSmRender({
         final image = pixelsToWhitePng(buffer, width, height);
         final outPath = '$outDir/$prefix-t$t.png';
         await File(outPath).writeAsBytes(img.encodePng(image));
-        var line =
-            't=${t}ms state=${engine.currentState()} png=$outPath';
+        var line = 't=${t}ms state=${engine.currentState()} png=$outPath';
         for (final (x, y) in samplePoints) {
           line += ' ${_fmtSample(buffer, width, x, y)}';
         }
