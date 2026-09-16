@@ -1,5 +1,5 @@
 name: compare
-description: "Comparacao visual SVG vs. dotLottie do verovio_lottie, renderizada com Flutter/Impeller (flutter_svg + dotlottie_flutter)."
+description: "Comparacao visual SVG vs. dotLottie do verovio_lottie: SVG via resvg (compare/svg_render/), dotLottie via dotlottie_flutter FFI."
 publish_to: 'none'
 version: 0.2.0+1
 
@@ -9,13 +9,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_svg: ^2.3.0
   dotlottie_flutter: ^0.1.7
   image: ^4.5.4
   archive: ^4.0.7
   args: ^2.7.0
   ffi: ^2.1.0
-  vector_graphics: ^1.2.0
 
 dev_dependencies:
   flutter_test:
@@ -24,21 +22,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-
-  assets:
-    - assets/fonts/LiberationSerif-Regular.ttf
-    - assets/fonts/LiberationSerif-Italic.ttf
-    - assets/fonts/LiberationSerif-Bold.ttf
-    - assets/fonts/LiberationSerif-BoldItalic.ttf
-
-  fonts:
-    - family: Liberation Serif
-      fonts:
-        - asset: assets/fonts/LiberationSerif-Regular.ttf
-        - asset: assets/fonts/LiberationSerif-Italic.ttf
-          style: italic
-        - asset: assets/fonts/LiberationSerif-Bold.ttf
-          weight: 700
-        - asset: assets/fonts/LiberationSerif-BoldItalic.ttf
-          weight: 700
-          style: italic

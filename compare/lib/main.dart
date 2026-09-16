@@ -1,10 +1,15 @@
 /// Ponto de entrada da ferramenta `compare` (Flutter/Linux).
 ///
-/// Mesma superfície de CLI da versão anterior em Rust:
-/// `svg-to-png`, `lottie-to-png`, `diff`, `sm-render`.
+/// Cobre `lottie-to-png`, `diff`, `sm-render` — o lado SVG (`svg-to-png`)
+/// vive num binário Rust separado, `compare/svg_render/` (ver
+/// `compare/README.md`): o `flutter_svg`/Impeller tinha limitações demais
+/// como renderizador de referência (não suporta `<svg>` aninhado, erra
+/// posição/tamanho de texto sob `transform`, e chegou a desenhar um glifo
+/// `<use>` repetido gigante e fora de lugar num achado real do corpus) e
+/// foi trocado por `resvg`, que não tem essas limitações.
 ///
 /// O app não abre janela útil: inicializa o binding do Flutter (necessário
-/// para o `flutter_svg` renderizar pelo motor), executa o job pedido,
+/// para o motor do `dotlottie_flutter` no Linux), executa o job pedido,
 /// imprime o resultado e sai com o código apropriado (0 ok, 1 erro de
 /// execução, 2 erro de uso). Rode sob `xvfb-run` em máquinas sem display.
 library;
@@ -18,10 +23,6 @@ import 'src/render_jobs.dart';
 
 ArgParser _baseCommands() {
   final parser = ArgParser();
-  parser.addCommand('svg-to-png', ArgParser()
-    ..addMultiOption('font', help: 'Arquivo de fonte adicional (repetível).')
-    ..addOption('pin-serif-family',
-        help: 'Família para a qual o genérico CSS "serif" deve resolver.'));
   parser.addCommand('lottie-to-png', ArgParser()
     ..addOption('width', mandatory: true)
     ..addOption('height', mandatory: true)
@@ -29,7 +30,12 @@ ArgParser _baseCommands() {
     ..addMultiOption('slot',
         help: 'Slot de cor "id:r,g,b" (repetível).', splitCommas: false)
     ..addMultiOption('sample',
-        help: 'Pixel "x,y" a amostrar (repetível).', splitCommas: false));
+        help: 'Pixel "x,y" a amostrar (repetível).', splitCommas: false)
+    ..addMultiOption('preload-font',
+        help: 'Fonte "nome:caminho.ttf" a pré-carregar no motor antes de '
+            'renderizar, via dotlottie_load_font (repetível) - spike para '
+            'fonte provida pelo host em vez de embutida no pacote.',
+        splitCommas: false));
   parser.addCommand('diff', ArgParser()
     ..addOption('tolerance', defaultsTo: '0'));
   parser.addCommand('sm-render', ArgParser()
@@ -48,7 +54,9 @@ ArgParser _baseCommands() {
 void _usage(ArgParser parser) {
   stderr.writeln('Uso: compare <comando> [opções]');
   stderr.writeln('');
-  stderr.writeln('Comandos: svg-to-png, lottie-to-png, diff, sm-render.');
+  stderr.writeln('Comandos: lottie-to-png, diff, sm-render.');
+  stderr.writeln(
+      '(svg-to-png agora é o binário separado compare/svg_render/, não um comando daqui)');
   stderr.writeln(parser.usage);
 }
 
@@ -70,16 +78,6 @@ Future<void> main(List<String> args) async {
   }
   try {
     switch (command.name) {
-      case 'svg-to-png':
-        if (command.rest.length != 2) {
-          throw FormatException('svg-to-png <entrada.svg> <saída.png>');
-        }
-        await runSvgToPng(
-          input: command.rest[0],
-          output: command.rest[1],
-          fonts: command['font'] as List<String>,
-          pinSerif: command['pin-serif-family'] as String?,
-        );
       case 'lottie-to-png':
         if (command.rest.length != 2) {
           throw FormatException(
@@ -93,6 +91,7 @@ Future<void> main(List<String> args) async {
           frame: double.parse(command['frame'] as String),
           slots: command['slot'] as List<String>,
           samples: command['sample'] as List<String>,
+          preloadFonts: command['preload-font'] as List<String>,
         );
       case 'diff':
         if (command.rest.length != 3) {

@@ -1,5 +1,8 @@
 # Binário e intermediários do `flutter build linux`
 /build
+# Binário e intermediários do `cargo build` em svg_render/ (Cargo.lock fica
+# versionado de propósito, mesma convenção do pubspec.lock acima)
+/svg_render/target
 # Saídas dos scripts (nunca versionar)
 /out
 # Gerado por fixtures/b01/gen.py só para a medição de escala do E5

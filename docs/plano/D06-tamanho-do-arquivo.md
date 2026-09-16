@@ -6,6 +6,16 @@ etapas — primeiro remedir com o usuário decidindo se vale a pena continuar
 (ver "Passo 0"), e só then, se a resposta for sim, uma segunda decisão sobre
 a técnica (ver "Decisão necessária (técnica)").
 
+**Achado relevante (2026-09-16, ver "Achado" no final de
+[B03](decisoes/B03-texto.md)):** existe um caminho alternativo que eliminaria
+por completo o custo fixo de fonte embutida que motiva este passo (~600-870
+KB/peça) — parar de embutir as fontes e o host chamar `dotlottie_load_font`
+antes de renderizar. Confirmado por spike que funciona no motor real, mas
+**não implementado**: fica condicionado a confirmar se o player real do
+zywny suporta essa chamada. Se isso for adotado depois, reavaliar se D06
+ainda é necessário antes de investir na técnica de precomp/reuso de glifo
+abaixo — o ganho relativo muda bastante sem o custo fixo de fonte.
+
 ## Objetivo
 
 Investigar se o tamanho dos pacotes `.lottie` do corpus é um problema real

@@ -151,6 +151,18 @@ final _clearSlots = _lib.lookupFunction<
     Int32 Function(Pointer<_Player>),
     int Function(Pointer<_Player>)>('dotlottie_clear_slots');
 
+// dotlottie_load_font/unload_font não recebem Pointer<_Player>: é um
+// registro de fontes global do motor (ThorVG `tvg_font_load_data`), não
+// por instância - por isso NativePlayer.loadFont/unloadFont abaixo são
+// `static`, não métodos de instância.
+final _loadFont = _lib.lookupFunction<
+    Int32 Function(Pointer<Utf8>, Pointer<Uint8>, IntPtr),
+    int Function(
+        Pointer<Utf8>, Pointer<Uint8>, int)>('dotlottie_load_font');
+
+final _unloadFont = _lib.lookupFunction<Int32 Function(Pointer<Utf8>),
+    int Function(Pointer<Utf8>)>('dotlottie_unload_font');
+
 /// Exceção para falhas do motor nativo com contexto da operação.
 class NativeError extends StateError {
   NativeError(super.message);
@@ -258,6 +270,37 @@ class NativePlayer {
   void clearSlots() {
     _check(
         _clearSlots(_ptr) == _kResultSuccess, 'clear_slots() falhou');
+  }
+
+  /// Registra [bytes] (uma fonte TTF) no motor sob [name], globalmente para
+  /// todo `NativePlayer` do processo (ver a nota acima de [_loadFont]) - o
+  /// carregador de Lottie do ThorVG resolve `fName`/`fFamily` de um `ty:5`
+  /// contra esse registro mesmo quando a fonte não está embutida no pacote
+  /// (`fonts.list` sem `fPath`). Precisa acontecer antes de renderizar
+  /// qualquer frame que use essa fonte.
+  static void loadFont(String name, Uint8List bytes) {
+    final namePtr = name.toNativeUtf8();
+    final dataPtr = malloc<Uint8>(bytes.length);
+    try {
+      dataPtr.asTypedList(bytes.length).setAll(0, bytes);
+      if (_loadFont(namePtr, dataPtr, bytes.length) != _kResultSuccess) {
+        throw NativeError('load_font($name) falhou');
+      }
+    } finally {
+      malloc.free(namePtr);
+      malloc.free(dataPtr);
+    }
+  }
+
+  static void unloadFont(String name) {
+    final namePtr = name.toNativeUtf8();
+    try {
+      if (_unloadFont(namePtr) != _kResultSuccess) {
+        throw NativeError('unload_font($name) falhou');
+      }
+    } finally {
+      malloc.free(namePtr);
+    }
   }
 
   NativeStateMachine loadStateMachineById(String id) {

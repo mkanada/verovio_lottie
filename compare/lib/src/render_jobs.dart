@@ -1,23 +1,18 @@
-/// Jobs da ferramenta: svg-to-png, lottie-to-png, diff e sm-render.
+/// Jobs da ferramenta: lottie-to-png, diff e sm-render (svg-to-png é o
+/// binário Rust separado `compare/svg_render/`, ver `compare/README.md`).
 ///
-/// Superfície de CLI idêntica à da versão Rust, para que os scripts em
-/// `scripts/` continuem funcionando trocando só o caminho do binário.
-/// Mensagens de terminal mantidas no mesmo formato (os scripts extraem
-/// `pct_diferente` etc. do stdout de `diff` com grep).
+/// Mensagens de terminal mantidas no mesmo formato de sempre (os scripts
+/// extraem `pct_diferente` etc. do stdout de `diff` com grep).
 library;
 
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:image/image.dart' as img;
 
 import 'diff.dart';
 import 'lottie_native.dart';
 import 'script.dart';
-import 'svg_preprocess.dart';
 
 /// Compõe um buffer ARGB8888S (alpha reto) sobre branco opaco e devolve um
 /// PNG sempre opaco — mesma convenção da versão anterior.
@@ -35,92 +30,6 @@ img.Image pixelsToWhitePng(Uint32List buffer, int width, int height) {
         blend(b, a), 255);
   }
   return out;
-}
-
-/// Renderiza [svgText] (já pré-processado) via `flutter_svg` (ou seja, pelo
-/// motor do Flutter/Impeller) sobre fundo branco.
-///
-/// O PNG sai no tamanho declarado nos atributos `width`/`height` do `<svg>`
-/// raiz (o que o Verovio emite e o lado Lottie usa). Quando a imagem natural
-/// decodificada difere (ex.: raiz com `viewBox` içado do aninhado, cujo
-/// tamanho natural é o do `viewBox`), o vetor é escalado — sem perda, por
-/// ser resolução-independente — igual ao que o widget `SvgPicture` faz.
-Future<img.Image> renderSvg(String svgText) async {
-  final pic = await vg.loadPicture(SvgStringLoader(svgText), null);
-  var w = pic.size.width.round();
-  var h = pic.size.height.round();
-  final rootTag = RegExp(r'<svg\b[^>]*>').firstMatch(svgText)?.group(0) ?? '';
-  int? attr(String name) {
-    final m = RegExp('$name="([^"]*)"').firstMatch(rootTag);
-    if (m == null) return null;
-    final n = RegExp(r'^[+-]?(\d+(\.\d+)?)').firstMatch(m.group(1)!.trim());
-    return n == null ? null : double.parse(n.group(1)!).round();
-  }
-  final aw = attr('width');
-  final ah = attr('height');
-  if (aw != null && aw > 0 && ah != null && ah > 0) {
-    w = aw;
-    h = ah;
-  }
-  if (w <= 0 || h <= 0) {
-    throw StateError('SVG com dimensões inválidas ($w x $h)');
-  }
-  final recorder = ui.PictureRecorder();
-  final canvas = ui.Canvas(recorder);
-  canvas.drawRect(
-    ui.Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()),
-    ui.Paint()..color = const ui.Color(0xFFFFFFFF),
-  );
-  canvas.scale(w / pic.size.width, h / pic.size.height);
-  canvas.drawPicture(pic.picture);
-  pic.picture.dispose();
-  final picture = recorder.endRecording();
-  final image = await picture.toImage(w, h);
-  picture.dispose();
-  final bytes = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
-  image.dispose();
-  if (bytes == null) throw StateError('toByteData() retornou nulo');
-  final rgba = bytes.buffer.asUint8List();
-  final out = img.Image(width: w, height: h);
-  for (var i = 0; i < w * h; i++) {
-    out.setPixelRgba(i % w, i ~/ w, rgba[i * 4], rgba[i * 4 + 1],
-        rgba[i * 4 + 2], rgba[i * 4 + 3]);
-  }
-  return out;
-}
-
-Future<void> runSvgToPng({
-  required String input,
-  required String output,
-  required List<String> fonts,
-  String? pinSerif,
-}) async {
-  final raw = await File(input).readAsBytes();
-  var svgText = utf8.decode(raw);
-  // O Verovio aninha um <svg class="definition-scale" viewBox=...> dentro do
-  // <svg> raiz; flutter_svg não suporta <svg> aninhado (dropa tudo em
-  // silêncio, PNG 100% branco) — achata para <g transform=...> antes.
-  svgText = flattenNestedSvg(svgText);
-  // flattenNestedSvg já realoca os textos para fora do <g> com scale, com
-  // x/y/font-size pré-escalados (ver doc da função).
-  // D01-3: `<title>` aninhado quebra medição de `text-anchor` em alguns
-  // renderizadores; `<title>` nunca é desenhado, então remover é seguro.
-  svgText = stripTitleElements(svgText);
-  if (pinSerif != null) {
-    // D01-2: o genérico CSS `serif` ("Times, serif" no SVG do Verovio)
-    // resolveria via fontconfig do SO; fixamos na família empacotada no app.
-    svgText = pinSerifFamily(svgText, pinSerif);
-  }
-  for (final f in fonts) {
-    if (!File(f).existsSync()) {
-      stderr.writeln(
-          'aviso: fonte $f não encontrada — usando fontes empacotadas/do sistema');
-    }
-  }
-  final image = await renderSvg(svgText);
-  await File(output).writeAsBytes(img.encodePng(image));
-  stdout.writeln(
-      'PNG salvo em $output (${image.width}x${image.height})');
 }
 
 void _loadInto(NativePlayer player, String input) {
@@ -151,12 +60,27 @@ Future<void> runLottieToPng({
   required double frame,
   required List<String> slots,
   required List<String> samples,
+  List<String> preloadFonts = const [],
 }) async {
   if (width <= 0 || height <= 0) {
     throw ArgumentError('--width e --height precisam ser maiores que zero');
   }
   final player = NativePlayer();
   try {
+    // Fontes pré-carregadas (spike: fonte não embutida no pacote, provida
+    // pelo host via `dotlottie_load_font` em vez de `fonts.list`/`origin:3`
+    // - ver compare/README.md). Precisa acontecer ANTES do load: o load já
+    // renderiza o frame inicial, que já precisaria da fonte resolvida.
+    for (final spec in preloadFonts) {
+      final colon = spec.indexOf(':');
+      if (colon < 0) {
+        throw FormatException(
+            '--preload-font mal formado (esperado nome:caminho.ttf): $spec');
+      }
+      final name = spec.substring(0, colon);
+      final path = spec.substring(colon + 1);
+      NativePlayer.loadFont(name, await File(path).readAsBytes());
+    }
     // O destino precisa existir ANTES do load: o load já deixa o buffer com
     // o frame inicial renderizado.
     player.setTarget(width, height);

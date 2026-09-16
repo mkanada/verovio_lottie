@@ -66,12 +66,13 @@ projeto. Por isso a raiz do repositório é dividida assim:
   espelha a estrutura do projeto Verovio original.
 - **`docs/`** — documentação do processo e das decisões deste projeto
   (este documento, decisões de arquitetura, notas de progresso).
-- **`compare/`** — ferramenta de comparação visual SVG vs. dotLottie em
-  Flutter (Linux): renderiza o SVG do Verovio para PNG (via `flutter_svg`/
-  Impeller), renderiza um frame de um Lottie/dotLottie para PNG (via o
-  `libdotlottie_rs.so` empacotado pelo `dotlottie_flutter`, o runtime oficial
-  da LottieFiles) e gera uma imagem de diferença pixel a pixel entre os dois.
-  Ver `compare/README.md` para uso e detalhes/pegadinhas da implementação.
+- **`compare/`** — ferramenta de comparação visual SVG vs. dotLottie, stack
+  híbrida: `compare/svg_render/` (Rust, `resvg`) renderiza o SVG do Verovio
+  para PNG; o app Flutter (Linux) em `compare/` renderiza um frame de um
+  Lottie/dotLottie para PNG (via o `libdotlottie_rs.so` empacotado pelo
+  `dotlottie_flutter`, o runtime oficial da LottieFiles, via FFI direto) e
+  gera uma imagem de diferença pixel a pixel entre os dois. Ver
+  `compare/README.md` para uso e detalhes/pegadinhas da implementação.
 - **`thorvg/`** e **`dotlottie-rs/`** — cópias vendorizadas do ThorVG (motor
   de renderização usado pelo `dotlottie-rs`) e do próprio `dotlottie-rs`,
   que o `compare/` compila no lugar das versões originais. Existem para
@@ -163,10 +164,11 @@ tooling e documentação próprios deste projeto (na raiz).
 - Critério de aceite visual: renderizar a mesma partitura via SVG (caminho
   já existente do Verovio) e via `.lottie` (novo exportador), extrair um PNG
   de cada resultado e comparar as imagens.
-- ✅ Ferramenta em `compare/` (Flutter): `flutter_svg`/Impeller para SVG→PNG e
-  o `dotlottie-rs` empacotado pelo `dotlottie_flutter` (runtime oficial da
-  LottieFiles, com renderer de software via ThorVG) para
-  Lottie/dotLottie→PNG. A comparação em si (`compare diff`)
+- ✅ Ferramenta em `compare/`, stack híbrida: `compare/svg_render/` (Rust,
+  `resvg`) para SVG→PNG e o `dotlottie-rs` empacotado pelo
+  `dotlottie_flutter` (runtime oficial da LottieFiles, com renderer de
+  software via ThorVG, Flutter/Linux) para Lottie/dotLottie→PNG. A
+  comparação em si (`compare diff`)
   gera uma imagem de diferença (fundo esmaecido + pixels divergentes em
   vermelho) mais estatísticas no terminal — a decisão de "passou/falhou"
   continua sendo visual/manual, sem limiar automático definido ainda.

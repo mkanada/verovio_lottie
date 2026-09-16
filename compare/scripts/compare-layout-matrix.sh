@@ -20,6 +20,7 @@ TOLERANCE=${2:-32}
 
 VEROVIO_BIN="$REPO_ROOT/verovio/tools/verovio"
 COMPARE_BIN="$REPO_ROOT/compare/build/linux/x64/release/bundle/compare"
+SVG_RENDER_BIN="$REPO_ROOT/compare/svg_render/target/release/svg_render"
 RESOURCE_PATH="$REPO_ROOT/verovio/data"
 OUT_DIR="$REPO_ROOT/docs/matriz-layout"
 TMP_PREFIX="$OUT_DIR/_compare-layout-matrix-tmp"
@@ -33,6 +34,12 @@ fi
 if [[ ! -x "$COMPARE_BIN" ]]; then
     echo "Binário do compare não encontrado em $COMPARE_BIN." >&2
     echo "Compile com: cd $REPO_ROOT/compare && flutter build linux --release" >&2
+    exit 1
+fi
+
+if [[ ! -x "$SVG_RENDER_BIN" ]]; then
+    echo "Binário do svg_render não encontrado em $SVG_RENDER_BIN." >&2
+    echo "Compile com: cd $REPO_ROOT/compare/svg_render && cargo build --release" >&2
     exit 1
 fi
 
@@ -140,7 +147,7 @@ for SIZE in "${SIZES[@]}"; do
                 LOTTIE_SIZE=$(stat -c%s "$LOTTIE_FILE")
 
                 echo "==> Página 1: SVG -> PNG"
-                "${COMPARE_RUN[@]}" svg-to-png "$PREFIX.svg" "$PREFIX-svg.png" "${FONT_ARGS[@]}" --pin-serif-family "Liberation Serif"
+                "$SVG_RENDER_BIN" "$PREFIX.svg" "$PREFIX-svg.png" "${FONT_ARGS[@]}" --pin-serif-family "Liberation Serif"
                 rm -f "$PREFIX.svg"
 
                 read -r WIDTH HEIGHT < <(python3 - "$PREFIX-svg.png" <<'PYEOF'

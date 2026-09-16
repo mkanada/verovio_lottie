@@ -25,12 +25,12 @@ consumir esses `.lottie` junto com o `timemap` do Verovio.
   `fonts/`, `tools/`, etc., e seu próprio `.gitignore`). É onde o novo
   exportador dotLottie será implementado, seguindo as convenções do
   Verovio.
-- **`compare/`** — app Flutter (Linux) com a ferramenta de comparação visual
-  SVG vs. dotLottie (`flutter_svg`/Impeller para SVG→PNG, o
-  `libdotlottie_rs.so` empacotado pelo `dotlottie_flutter` para
-  Lottie/dotLottie→PNG via FFI próprio, diff pixel a pixel). Ver
-  `compare/README.md` antes de mexer nela — tem pegadinhas documentadas
-  sobre `<svg>` aninhado e texto sob `transform` no `flutter_svg`.
+- **`compare/`** — ferramenta de comparação visual SVG vs. dotLottie, stack
+  híbrida: `compare/svg_render/` (Rust, `resvg`) para SVG→PNG, e o app
+  Flutter (Linux) em `compare/` para Lottie/dotLottie→PNG via FFI direto no
+  `libdotlottie_rs.so` empacotado pelo `dotlottie_flutter`, mais diff pixel
+  a pixel. Ver `compare/README.md` antes de mexer nela — tem pegadinhas
+  documentadas (resvg e o `.so` do dotlottie_flutter, cada um com as suas).
 - **`thorvg/`** — cópia vendorizada do ThorVG (o motor que renderiza os
   `.lottie`) **com correções próprias**, marcadas com `verovio_lottie` no
   código. Ver `thorvg/VEROVIO_LOTTIE.md` (origem, lista de modificações, como

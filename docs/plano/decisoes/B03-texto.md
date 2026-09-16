@@ -245,3 +245,64 @@ Registrado em 2026-09-13.
   inteiro, não só na frase testada no spike; (e) remedir tamanho de pacote e
   paridade visual com `compare-corpus.sh` depois de implementado, como A13
   já fez para os glifos.
+
+## Achado (2026-09-16): existe um caminho T1 sem custo fixo de tamanho — fonte provida pelo host, não embutida
+
+Contexto: investigando por que o texto comum sai em sans (não Liberation
+Serif) no PNG de referência renderizado pelo `.so` pub.dev empacotado pelo
+`dotlottie_flutter` (usado por `compare`, ver "Divergências conhecidas" em
+`compare/README.md`), o usuário perguntou se **não embutir mais as fontes,
+esperando que fiquem disponíveis no host do player**, resolveria o problema.
+
+**Confirmado por spike real** (não só leitura de código): sim, mas com uma
+ressalva importante sobre o que "disponível no host" significa aqui.
+
+- `dotlottie-rs` expõe `dotlottie_load_font(nome, bytes, tamanho)` /
+  `dotlottie_unload_font(nome)` (`dotlottie-rs/src/c_api/mod.rs:134-161`) —
+  um registro de fontes **global do motor** (`tvg_font_load_data` do ThorVG,
+  não por instância de player), confirmado como símbolo exportado no
+  `.so` pub.dev real (`nm -D` no `libdotlottie_rs.so` que o
+  `dotlottie_flutter` 0.1.7 empacota — não só no vendorizado local).
+- Montei um pacote `.lottie` com a camada de texto de sempre (`ty:5`,
+  `fName:"LiberationSerif-Regular"`) mas **sem nenhum dado de fonte**
+  (`fonts.list` só com `fName`/`fFamily`/`fStyle`, sem `fPath`, sem `f/*.ttf`
+  no zip). Sem pré-carregar, sai em sans (igual ao caso já documentado).
+  Chamando `dotlottie_load_font("LiberationSerif-Regular", <bytes do
+  Liberation Serif Regular>)` **antes** de carregar/renderizar o pacote, a
+  mesma camada sai correta, em Liberation Serif — confirma que o mecanismo
+  funciona ponta a ponta no motor real usado hoje pelo `compare`.
+- **Ressalva:** isso não é "o player acha a fonte instalada no sistema pelo
+  nome" — conferi o código-fonte do ThorVG vendorizado inteiro e não existe
+  nenhuma integração com fontconfig/lookup de fonte do SO em lugar nenhum
+  (`grep` por `fontconfig`/`FcConfig`/`system font` não bate em nada). É
+  **o host (quem quer que rode o player) que precisa localizar os bytes da
+  fonte por conta própria e chamar `load_font` explicitamente** antes de
+  renderizar — o `.lottie` sozinho não consegue mais pedir isso, porque
+  `fonts.list` sem `fPath`/dados não carrega nada.
+
+**O que isso mudaria, se implementado:**
+
+- Exportador: `fonts.list` sem `fPath` nem `f/*.ttf` no pacote — elimina de
+  vez o custo fixo de ~600-870 KB/peça que motivou D06 (D06 ficaria "sem
+  problema a resolver" nesse cenário, não só "aceitável").
+- Novo requisito, fora do exportador: **qualquer player que for tocar esses
+  `.lottie` no zywny precisa saber localizar os bytes de Liberation Serif e
+  chamar o equivalente de `load_font` antes de renderizar.** Não confirmado
+  se o(s) runtime(s) de player alvo do zywny expõem essa chamada (mesma
+  categoria de risco já aberto em B02/C04 sobre capacidades de runtime não
+  testadas) — se não expuserem, essa mudança quebraria texto comum no
+  player real mesmo passando limpo na comparação local.
+
+**Ferramental já pronto para retomar isso**, sem precisar redescobrir: `compare
+lottie-to-png` ganhou `--preload-font nome:caminho.ttf` (repetível, chama
+`dotlottie_load_font` antes de carregar o pacote — `lib/src/lottie_native.dart`
+`NativePlayer.loadFont`/`unloadFont`, `lib/src/render_jobs.dart`
+`runLottieToPng`). `compare/assets/fonts/*.ttf` já tem os 4 estilos de
+Liberation Serif empacotados (usados hoje só pelo lado SVG) — dá pra
+pré-carregar os mesmos arquivos pro lado Lottie sem nenhum asset novo.
+
+**Decisão do usuário (2026-09-16): não implementar agora.** Só documentar o
+achado — a decisão de T1 (fonte embutida) de B03 continua valendo como está;
+isso fica registrado como uma alternativa viável a reconsiderar depois,
+condicionada a confirmar primeiro se o player real do zywny suporta
+`load_font` (ou equivalente) antes de reabrir D-TEXTO de verdade.
