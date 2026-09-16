@@ -73,13 +73,6 @@ projeto. Por isso a raiz do repositório é dividida assim:
   `dotlottie_flutter`, o runtime oficial da LottieFiles, via FFI direto) e
   gera uma imagem de diferença pixel a pixel entre os dois. Ver
   `compare/README.md` para uso e detalhes/pegadinhas da implementação.
-- **`thorvg/`** e **`dotlottie-rs/`** — cópias vendorizadas do ThorVG (motor
-  de renderização usado pelo `dotlottie-rs`) e do próprio `dotlottie-rs`,
-  que o `compare/` compila no lugar das versões originais. Existem para
-  manter correções próprias no ThorVG que o upstream ainda não tem (ver
-  `thorvg/VEROVIO_LOTTIE.md`).
-- **`thorvg-cli/`** — renderiza o SVG e o `.lottie` pelo mesmo ThorVG local,
-  para isolar diferenças de motor (ver `thorvg-cli/README.md`).
 - Outros diretórios a criar conforme o projeto avança, na raiz (fora de
   `verovio/`): qualquer utilitário adicional de suporte ao desenvolvimento
   que não faça parte do Verovio em si.
@@ -165,7 +158,7 @@ tooling e documentação próprios deste projeto (na raiz).
   já existente do Verovio) e via `.lottie` (novo exportador), extrair um PNG
   de cada resultado e comparar as imagens.
 - ✅ Ferramenta em `compare/`, stack híbrida: `compare/svg_render/` (Rust,
-  `resvg`) para SVG→PNG e o `dotlottie-rs` empacotado pelo
+  `resvg`) para SVG→PNG e o `libdotlottie_rs.so` empacotado pelo
   `dotlottie_flutter` (runtime oficial da LottieFiles, com renderer de
   software via ThorVG, Flutter/Linux) para Lottie/dotLottie→PNG. A
   comparação em si (`compare diff`)
@@ -189,7 +182,7 @@ Estes pontos foram deliberadamente deixados em aberto na fase de definição
 do projeto e devem ser resolvidos/pesquisados durante o desenvolvimento:
 
 1. ~~Ferramenta exata de renderização Lottie → PNG usada nos testes de
-   comparação visual.~~ Resolvido: `dotlottie-rs` (ver `compare/README.md`).
+   comparação visual.~~ Resolvido: `dotlottie_flutter` (ver `compare/README.md`).
 2. ~~Desenho detalhado do grafo da State Machine do dotLottie (estados,
    inputs, listeners) que satisfaça o requisito de "acesso direto a qualquer
    nota".~~ Resolvido: topologia em estrela via `GlobalState`+`PlaybackState`

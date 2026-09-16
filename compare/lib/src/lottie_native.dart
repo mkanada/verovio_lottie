@@ -13,8 +13,9 @@
 ///   (só porque o embedder Linux exige um display) sem depender de captura
 ///   de tela — os pixels saem do software renderer (ThorVG) como antes.
 ///
-/// Assinaturas C verificadas contra o `dotlottie-rs` vendorizado em
-/// `dotlottie-rs/src/c_api/mod.rs` e contra os bindings do próprio
+/// Assinaturas C verificadas contra o crate `dotlottie-rs`
+/// (https://github.com/LottieFiles/dotlottie-rs, commit `eb44c991`,
+/// v0.1.58, `dotlottie-rs/src/c_api/mod.rs`) e contra os bindings do próprio
 /// `dotlottie_flutter` (`src/ffi/dotlottie_bindings.dart`, v0.1.7).
 /// `ColorSpace::ARGB8888S` (alpha reto, valor 3 — ver `renderer/backend.rs`)
 /// é usado de propósito: ver a nota D05 no README sobre dessaturação com

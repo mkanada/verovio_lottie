@@ -31,26 +31,12 @@ consumir esses `.lottie` junto com o `timemap` do Verovio.
   `libdotlottie_rs.so` empacotado pelo `dotlottie_flutter`, mais diff pixel
   a pixel. Ver `compare/README.md` antes de mexer nela — tem pegadinhas
   documentadas (resvg e o `.so` do dotlottie_flutter, cada um com as suas).
-- **`thorvg/`** — cópia vendorizada do ThorVG (o motor que renderiza os
-  `.lottie`) **com correções próprias**, marcadas com `verovio_lottie` no
-  código. Ver `thorvg/VEROVIO_LOTTIE.md` (origem, lista de modificações, como
-  atualizar). Hoje: não aplicar itálico sintético por cima de fonte já
-  itálica (D01-4). **Os players oficiais de dotLottie não têm essa
-  correção** — neles o texto comum em itálico sai inclinado duas vezes.
-- **`dotlottie-rs/`** — cópia vendorizada do crate `dotlottie-rs`, que só
-  existe para compilar o `thorvg/` local (o `build.rs` original compila de
-  `deps/thorvg`, aqui um symlink). Usada por `compare/`. Ver
-  `dotlottie-rs/VEROVIO_LOTTIE.md`.
-- **`thorvg-cli/`** — `thorvg-render`: renderiza o SVG e o `.lottie` pelo
-  mesmo `thorvg/` local (build meson com loader de SVG). Ver
-  `thorvg-cli/README.md`.
 - **Raiz do repositório** — tudo que é deste projeto e não do Verovio em
   si: `docs/`, `compare/`, e outros utilitários de suporte conforme o
   projeto avançar. Não misture esse tooling dentro de `verovio/`.
 - Histórico git **próprio e independente** do upstream do Verovio (sem
   submodule/subtree) — atualizações do Verovio original precisam ser
-  incorporadas manualmente se necessário. O mesmo vale para `thorvg/` e
-  `dotlottie-rs/`.
+  incorporadas manualmente se necessário.
 
 ## Decisões arquiteturais já tomadas
 
@@ -134,8 +120,8 @@ Trate estas decisões como fixas — não as reabra sem confirmar com o usuário
     que o usuário pediu para investigar/corrigir um caso real — números de
     tempo/rubato bold+italic em Clair de Lune saindo só em negrito).
   - Mecanismo: camada de texto nativa do Lottie (`ty:5` + `fonts.list` com
-    `origin:3`), confirmada funcionando no `dotlottie-rs`/ThorVG por spike
-    real nesta sessão (não só leitura de código).
+    `origin:3`), confirmada funcionando no ThorVG por spike real nesta
+    sessão (não só leitura de código).
   - Custo de tamanho aceito conscientemente: ~208-220 KB comprimidos por
     estilo de fonte embutido (medido no spike), ~600-650 KB fixos por peça
     com os três estilos originais (agora ~800-870 KB com os quatro,

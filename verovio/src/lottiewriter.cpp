@@ -562,8 +562,8 @@ static std::string WriteTextLayer(
 // Fixed fonts.list entries (B03: Regular/Italic/Bold always embedded together, whether or not
 // the piece actually uses each style - keeps package size predictable, see D01's "Decisões de
 // escopo"; BoldItalic added in D01-5, same always-embedded treatment), format confirmed
-// against the dotlottie-rs/ThorVG version vendored by `compare`
-// (deps/thorvg/test/resources/resolver.json and src/renderer/thorvg.rs's
+// against the dotlottie-rs/ThorVG engine (LottieFiles/dotlottie-rs, commit eb44c991,
+// test/resources/resolver.json and src/renderer/thorvg.rs's
 // asset_resolver_memoizes_loaded_fonts_and_failures test, both using "fName"/"fFamily"/
 // "fStyle"/"fPath"/"origin":3).
 static std::string WriteFontsList()

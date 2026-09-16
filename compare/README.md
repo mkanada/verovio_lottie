@@ -232,8 +232,10 @@ usa nessa plataforma — mas acessado via FFI próprio
    software renderer (ThorVG) diretamente — só o display para inicializar o
    embedder (daí o `xvfb-run`, só para este binário).
 
-Assinaturas C verificadas contra o `dotlottie-rs` vendorizado em
-`dotlottie-rs/src/c_api/mod.rs`. O buffer usa `ARGB8888S` (alpha reto),
+Assinaturas C verificadas contra o crate
+[`dotlottie-rs`](https://github.com/LottieFiles/dotlottie-rs) (commit
+`eb44c991`, v0.1.58, `dotlottie-rs/src/c_api/mod.rs`) e contra os bindings do
+próprio `dotlottie_flutter` (v0.1.7). O buffer usa `ARGB8888S` (alpha reto),
 pelo mesmo motivo documentado em "Alpha reto (D05)" abaixo.
 
 ## Pegadinhas do resvg (`svg_render/src/main.rs`)
@@ -299,18 +301,23 @@ sem versão mais nova publicada) não honra fonte local/embutida do Lottie
 (`fonts.list` com `origin:3`/`fPath`) — texto comum sempre cai numa sans do
 sistema, mesmo com o pacote gerado corretamente (confirmado por spike
 isolado: um `.lottie` mínimo com só uma camada `ty:5` + TTF embutido, exatamente
-conforme a spec, ainda sai em sans). Também não tem a correção local de
-`thorvg/VEROVIO_LOTTIE.md` (D01-4: itálico sintético sobre fonte já itálica
-sai com inclinação dupla). **Não é bug do exportador.**
+conforme a spec, ainda sai em sans). Também tem o bug de itálico sintético
+duplicado sobre fonte já itálica (D01-4, ver
+`docs/plano/D01-4-italico-sintetico-thorvg.md`) — não corrigido: o `thorvg/`
+vendorizado que trazia esse patch foi removido do projeto por estar sem uso
+ativo. **Não é bug do exportador.**
 
 Mecanismo alternativo confirmado por spike, que contorna sem trocar o
 `.so`: `dotlottie_load_font(nome, bytes)` (símbolo exportado no próprio
-`.so` pub.dev, ver `dotlottie-rs/src/c_api/mod.rs:134-149`) registra uma
+`.so` pub.dev, ver
+[`dotlottie-rs/src/c_api/mod.rs:134-149`](https://github.com/LottieFiles/dotlottie-rs/blob/eb44c991e5e2bc08daa5081caf750d1324f31d62/dotlottie-rs/src/c_api/mod.rs#L134-L149))
+registra uma
 fonte globalmente no motor antes de renderizar, e o carregador de Lottie a
 resolve por nome mesmo sem `fPath`/dado embutido no pacote —
 `lottie-to-png --preload-font nome:caminho.ttf` já expõe isso. **Não é**
-"o player acha a fonte do sistema pelo nome" — o ThorVG vendorizado não tem
-nenhuma integração com fontconfig/fonte do SO; é o host que precisa
+"o player acha a fonte do sistema pelo nome" — o ThorVG não tem nenhuma
+integração com fontconfig/fonte do SO (confirmado por leitura de código); é
+o host que precisa
 localizar os bytes e chamar `load_font` explicitamente. Ver a seção "Achado
 (2026-09-16)" em `docs/plano/decisoes/B03-texto.md` para o contexto
 completo (isso motivaria remover a fonte embutida do exportador — decisão
@@ -318,19 +325,23 @@ ainda não tomada, `--preload-font` fica pronto pra quando for retomada).
 
 Caminho alternativo não explorado, que também resolveria D01-4 (itálico):
 linkar o FFI (`lib/src/lottie_native.dart`) contra um `libdotlottie_rs.so`
-compilado localmente a partir de `dotlottie-rs/`/`thorvg/` (os mesmos
-vendorizados com as correções do projeto) em vez do `.so` que o pacote
-`dotlottie_flutter` empacota.
+compilado localmente a partir do crate
+[`dotlottie-rs`](https://github.com/LottieFiles/dotlottie-rs) + um ThorVG com
+o patch de D01-4 reaplicado, em vez do `.so` que o pacote `dotlottie_flutter`
+empacota. Exigiria vendorizar `dotlottie-rs` e `thorvg/` de novo (ambos
+removidos do projeto por estarem sem uso ativo — ver histórico do git e
+`docs/plano/D01-4-italico-sintetico-thorvg.md` para o patch original) só
+para esse fim.
 
 ## Limitações atuais / decisões conhecidas
 
 - **Critério de comparação é visual/manual** — `diff` dá um número e uma
   imagem para inspeção humana; não há um limiar de "passou/falhou"
   automático definido ainda (ver `docs/descricao-do-projeto.md`).
-- **O PNG do Lottie mostra o que o `dotlottie-rs`/ThorVG empacotado (pub.dev)
-  desenha**, não o que os players oficiais de dotLottie desenham, e sem a
-  correção local de itálico (D01-4) nem fonte embutida honrada — ver "Fonte
-  comum sem serifa" acima.
+- **O PNG do Lottie mostra o que o `dotlottie_flutter` (pub.dev) desenha**,
+  o mesmo que os players oficiais de dotLottie desenham — inclusive o bug de
+  itálico sintético duplicado (D01-4) e a fonte embutida não honrada — ver
+  "Fonte comum sem serifa" acima.
 - **O PNG do SVG mostra o que o `resvg` 0.48 desenha** — não é
   necessariamente pixel-idêntico a um browser, mas não tem as limitações
   estruturais que o `flutter_svg`/Impeller tinha (ver "Por que resvg" acima).
