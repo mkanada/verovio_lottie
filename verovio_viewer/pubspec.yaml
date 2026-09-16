@@ -1,0 +1,30 @@
+name: verovio_viewer
+description: "Widget compartilhado para exibir partituras animadas (dotLottie) geradas pelo verovio_lottie: embute dotlottie_flutter e as fontes de renderização (Liberation + SMUFL)."
+version: 0.0.1
+homepage:
+publish_to: 'none'
+
+environment:
+  sdk: ^3.13.3
+  flutter: ">=1.17.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  dotlottie_flutter: ^0.1.7
+  archive: ^4.0.7
+  path_provider: ^2.1.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  # assets/verovio_data.zip é gerado por tool/build_assets.sh a partir de
+  # ../verovio/data (não versionado — ver README.md desta pasta). Um único
+  # arquivo zip contorna o bug do bundler de assets do Flutter, que só lista
+  # o topo de um diretório (sem recursão), o que faria as subpastas SMuFL
+  # (Bravura/, Leipzig/, ...) desaparecerem silenciosamente.
+  assets:
+    - assets/verovio_data.zip
