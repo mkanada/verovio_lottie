@@ -15,13 +15,16 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 verovio_root="$(cd "$script_dir/../.." && pwd)"
-build_dir="$verovio_root/tools/build-library"
+build_dir="${BUILD_DIR:-$verovio_root/tools/build-library}"
 
 mkdir -p "$build_dir"
 cmake -S "$verovio_root/cmake" -B "$build_dir" \
     -DBUILD_AS_LIBRARY=ON \
-    -DCMAKE_BUILD_TYPE=Release
+    -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE:-Release}"
 cmake --build "$build_dir" -j"$(nproc)"
 
 cp "$build_dir/libverovio.so" "$script_dir/libverovio.so"
+# Remove debug symbols: they account for most of the .so size and are not
+# needed at runtime (keep an unstripped copy in the build dir for debugging).
+strip --strip-unneeded "$script_dir/libverovio.so"
 echo "Built $script_dir/libverovio.so"
