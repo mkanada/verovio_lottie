@@ -1,0 +1,7 @@
+{
+  "version": "2",
+  "generator": "Verovio 6.3.0-40a0172-dirty (verovio_lottie)",
+  "animations": [{ "id": "score" }],
+  "stateMachines": [{ "id": "sm_highlight" }, { "id": "sm_page" }],
+  "initial": { "animation": "score" }
+}
